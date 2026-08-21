@@ -1,7 +1,7 @@
 # Shamus VIC-20 routine map
 
 This is a functional index to the semantic labels in `main.asm`. The address column preserves the
-link to raw disassemblies and debugger locations without retaining decoded `Lxxxx` source labels.
+link to debugger locations and other disassemblies.
 
 Cartridge entry and NMI behaviour are described in
 [startup-and-interrupts.md](startup-and-interrupts.md).
@@ -45,14 +45,14 @@ start_of_program ($A009)
 | `$A07E` | `draw_room_layout` | Expand a four-byte room record into fixed wall segments. |
 | `$A02D` | `animate_electric_walls` | Rotate all lethal wall character graphics. |
 | `$A528` | `handle_keys_and_keyholes` | Collect keys and open their colour-matched keyholes. |
-| `$A5C8` | `update_room_27_moving_barrier` | Move room `$1B`'s electric-wall gap and detect a SHIV in its X band. |
+| `$A5C8` | `update_room_27_moving_barrier` | Move room 27's electric-wall gap and detect a SHIV in its X band. |
 | `$A3D6` | `handle_player_collision_and_room_exit` | Test death and apply room changes of +/-1 or +/-6. |
 | `$B945` | `rebuild_current_room_after_object_change` | Redraw keys/keyholes without respawning enemies. |
 | `$B985` | `initialize_current_room` | Rebuild all room graphics, objects, state, and enemy arrays. |
 | `$AFA3` | `initialize_room_enemies` | Populate all three enemy species from the room spawn mask. |
 | `$B03D` | `clear_transient_entities` | Clear shots/explosions and redraw initial entities. |
-| `$B079` | `initialize_open_room_27_enemies` | Fill room `$1B` after its barrier has been removed. |
-| `$B93D` | `advance_to_next_level` | Award completion bonus and advance Level One/Two/Lair. |
+| `$B079` | `initialize_open_room_27_enemies` | Fill room 27 after its barrier has been removed. |
+| `$B93D` | `advance_to_next_level` | Advance Level One/Two/Lair without changing the chosen skill. |
 
 ## Player and weapons
 
@@ -95,7 +95,7 @@ start_of_program ($A009)
 | `$ABE1` | `test_ion_shiv_hit` | SHIV-only entry used by the Shadow and lair target. |
 | `$AEE0` | `test_explosion_hit` | Test one entity against active explosion slots. |
 | `$B134` | `award_50_points` | Add 50 displayed points and update the high score. |
-| `$B10E` | `draw_score_and_high_score` | Render both three-byte BCD values. |
+| `$B10E` | `draw_score_and_high_score` | Render both three-byte binary-coded decimal scores. |
 | `$B0BF` | `draw_packed_bcd_score` | Suppress leading zeroes and append the fixed units zero. |
 
 ## Objects and special sequences
@@ -131,7 +131,7 @@ start_of_program ($A009)
 | `$AA7E` | `poll_skill_level_key` | Debounce and cycle the four skill settings. |
 | `$B951` | `start_new_game` | Reset lives, scores, progression, objects, and first room. |
 | `$B96A` | `reset_level_state` | Reset keys, room objects, barrier state, and starting position. |
-| `$B99A` | `initialize_room_runtime_state` | Restore wall glyphs, HUD, timers, and per-room runtime state. |
+| `$B99A` | `initialize_room_runtime_state` | Restore wall glyphs, status display, timers, and runtime state. |
 | `$B9F5` | `main_game_loop` | Central update dispatcher. |
 
 Detailed timing and sound analysis is in [sound-and-timing.md](sound-and-timing.md).

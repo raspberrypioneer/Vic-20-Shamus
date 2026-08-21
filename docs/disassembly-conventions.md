@@ -11,15 +11,7 @@ A fully decoded routine receives:
 3. One semantic global label, such as `configure_display`.
 4. Dot-prefixed local labels for internal branches and loops.
 
-The temporary address-derived `Lxxxx` label is removed once every external reference has been
-changed to the semantic name. The address remains available in `build/symbols` and the routine map.
-
-## Provisional labels
-
-During decoding, an `Lxxxx` global label meant that an address was still acting as a provisional
-entry point or data name. The completed source no longer contains address-derived `Lxxxx` labels.
-If future investigation introduces one temporarily, it should remain until its role and callers are
-understood, then be replaced with a semantic global label or made local to its owning block.
+Routine addresses remain available in `build/symbols` and the routine map.
 
 ## Local labels
 
@@ -27,7 +19,7 @@ Internal control flow uses ACME's dot notation:
 
 ```asm
 configure_display
-	lda #$00
+	lda #0
 .clear_loop
 	sta $1000,x
 	dex
@@ -54,6 +46,37 @@ Dot labels stay out of the global symbol list, keeping it useful for navigation 
 	dex
 	bpl .copy_byte
 ```
+
+## Number notation
+
+- Immediate values which are ordinary quantities use decimal, for example `lda #66` for a screen
+  coordinate or `ldx #6` for a seven-entry loop.
+- Immediate bit masks and exact input-bit patterns use eight-digit binary so the selected bits are
+  visible, with the equivalent hexadecimal retained in a line comment: `and #%10000000 ;$80` or
+  `cmp #%10000100 ;$84`.
+- Addresses, address bytes, packed values, character codes and hardware-register layouts remain
+  hexadecimal. An uncertain immediate remains hexadecimal until its purpose is established.
+- Zero-page locations use their semantic labels rather than raw addresses wherever their role is
+  known.
+- VIC colour values use `VIC_COLOUR_*` constants, so writes to colour RAM state the intended colour
+  directly rather than relying on a numeric code or repeated line comments.
+- Enumerated game states use named constants such as `LEVEL_LAIR` and `SKILL_EXPERT` in preference
+  to unexplained numeric values.
+
+## Unused absolute loads
+
+An instruction such as:
+
+```asm
+	lda reset_level_state
+```
+
+loads the byte stored at the address labelled `reset_level_state`; it does not load that address
+itself. In this example the byte is `$A9`, the opcode of the routine's first `LDA #0`. The value
+is immediately overwritten and has no gameplay effect. Similar loads precede
+`initialize_room_runtime_state` and occur in `set_text_row`. They may be original-source remnants or
+timing/padding instructions, but are retained because removing them would change the program bytes
+and every following address.
 
 ## Data presentation
 

@@ -41,7 +41,8 @@ and the lair target use the shared approximately 16 by 16-pixel overlap routine.
 
 ## Fire control and ION SHIVs
 
-The VIC-20 implementation allocates three simultaneous ION SHIV slots:
+ION SHIVs are Shamus's player bullets. The VIC-20 implementation allocates three simultaneous
+ION SHIV slots:
 
 - X positions: `$11-$13`
 - Y positions: `$14-$16`
@@ -122,7 +123,7 @@ Enemy shots advance one pixel per update. They disappear at the screen limits or
 solid maze cell. The wall sample uses the pre-move drawing coordinates rather than the newly
 calculated leading point, so a shot can be displayed in a wall for one update before being removed.
 
-Enemy-shot update frequency also rises with progression. Room `$00` performs one update per main
+Enemy-shot update frequency also rises with progression. Room 0 performs one update per main
 loop. In later Level One rooms a second update occurs on alternate frame-counter values. Nonzero
 rooms on Level Two and the Lair perform two enemy-shot updates every loop. This scheduling is
 separate from the ordinary-enemy update masks.
@@ -145,7 +146,8 @@ There are seven explosion slots. Each animation has four frames and advances onc
 iterations. If every explosion slot is occupied, the enemy is still removed and scored but the new
 visual effect is omitted.
 
-Score and high score are stored as three-byte packed BCD values and displayed as six digits.
+Score and high score are stored as three-byte packed binary-coded decimal (BCD) values and displayed
+as six digits.
 
 ## The Shadow
 
@@ -157,23 +159,23 @@ maze-collision logic and cannot be destroyed. An ION SHIV hit starts a temporary
 of removing it. Explosions do not kill it.
 
 The Shadow calls the same direct SHIV test in SHIV-only mode, so a hit consumes the SHIV and creates
-an explosion normally. Instead of removing or scoring the Shadow, the caller loads `$2D` into
-`SHADOW_HIT_TIMER`. While that 45-update countdown is nonzero the pursuit movement is skipped; the
+an explosion normally. Instead of removing or scoring the Shadow, the caller loads 45 into
+`SHADOW_HIT_TIMER`. While that countdown is nonzero the pursuit movement is skipped; the
 Shadow remains visible and continues accepting SHIV hits, but further hits do not restart the timer.
 
 ## Death
 
-The death sequence XOR-erases Shamus, draws three graphic fragments, and sweeps the noise and tone
-generators through 256 values. One life is then removed.
+The death sequence XOR-erases Shamus, draws three adjacent graphic fragments spelling "OUCH!", and
+sweeps the noise and tone generators through 256 values. One life is then removed.
 
 If lives remain, Shamus respawns at a room-specific safe position. Losing the final life returns to
 the title/new-game sequence. Dying clears the room-rushing timer before the room is rebuilt.
 
 The respawn coordinates fall into three groups:
 
-- Rooms `$06,$0C,$12,$19,$1B,$1E` restart at the right edge (`X=$A2,Y=$42`).
-- Rooms `$0B,$10,$11,$14,$18` restart near the top centre (`X=$54,Y=$06`).
-- Every other room restarts near the left edge at mid-height (`X=$0A,Y=$42`).
+- Rooms 6, 12, 18, 25, 27 and 30 restart at the right edge (`X=162,Y=66`).
+- Rooms 11, 16, 17, 20 and 24 restart near the top centre (`X=84,Y=6`).
+- Every other room restarts near the left edge at mid-height (`X=10,Y=66`).
 
 ## Lair target
 

@@ -1,4 +1,4 @@
-; Shamus for the Commodore Vic20
+﻿; Shamus for the Commodore Vic20
 ; Written by Tom Griner and released by Human Enginered Software in 1983.
 ;
 ; This disassembly explains how this well-crafted game works in detail.
@@ -34,13 +34,23 @@ _CHARACTER_BITMAP_ADDR = $1000  ;writable tall-character graphics / software fra
 _CHARACTER_BITMAP_END  = $2000  ;first address after writable character graphics
 _CHARACTER_ROM_ADDR    = $8800  ;uppercase/graphics character ROM visible to the VIC
 
+VIC_COLOUR_BLACK       = 0
+VIC_COLOUR_WHITE       = 1
+VIC_COLOUR_RED         = 2
+VIC_COLOUR_CYAN        = 3
+VIC_COLOUR_PURPLE      = 4
+VIC_COLOUR_GREEN       = 5
+VIC_COLOUR_BLUE        = 6
+VIC_COLOUR_YELLOW      = 7
+
 ELECTRIC_VERTICAL_WALL_BITMAP   = _CHARACTER_BITMAP_ADDR+$0fe0 ;character code $fe
 ELECTRIC_HORIZONTAL_WALL_BITMAP = _CHARACTER_BITMAP_ADDR+$0ff0 ;character code $ff
 
 _KERNAL_NMI_VECTOR     = $0318  ;792-793 RAM vector used by the KERNAL NMI handler
 _KERNAL_INITVIA        = $fdf9  ;65017 initialize VIA timers and interrupt state
-_KERNAL_EXIT_INTERRUPT = $ff56  ;restore registers and return from an interrupt
-_KERNAL_RS232_TIMING_DATA = $ff5b ;start of data, deliberately used here as an NMI destination
+_KERNAL_EXIT_INTERRUPT = $ff56  ;restore registers; final instruction is RTI at $ff5b
+_KERNAL_RETURN_FROM_INTERRUPT = $ff5b ;RTI ending the KERNAL interrupt-exit routine
+_KERNAL_RS232_TIMING_DATA = $ff5c ;start of the following RS-232 timing table
 
 ;--------------------------------------------------------------------------------------------------
 ; Working RAM map
@@ -50,7 +60,7 @@ _KERNAL_RS232_TIMING_DATA = $ff5b ;start of data, deliberately used here as an N
 
 FRAMEBUFFER_PTR        = $00    ;2-byte address of the destination byte in character bitmap RAM
 GRAPHIC_PTR            = $02    ;2-byte address of the source graphic
-SCORE_PTR              = $04    ;2-byte pointer used while printing a three-byte BCD score
+SCORE_PTR              = $04    ;pointer used while printing a binary-coded decimal (BCD) score
 JOYSTICK_STATE         = $06    ;active-low: up=$04, down=$08, left=$10, fire=$20, right=$80
 RANDOM_STATE           = $07
 DRAW_X                 = $08
@@ -64,7 +74,7 @@ SHIFTED_BYTE_HIGH      = $0f
 PIXEL_SHIFT            = $10
 INPUT_DIRECTION_LATCH  = $1a
 
-PLAYER_SHOT_X          = $11    ;three entries: $11-$13
+PLAYER_SHOT_X          = $11    ;three ION SHIV (player bullet) entries: $11-$13
 PLAYER_SHOT_Y          = $14    ;three entries: $14-$16
 PLAYER_SHOT_DIRECTION  = $17    ;three entries: $17-$19, directions 0-7 clockwise
 
@@ -86,7 +96,6 @@ ENEMY3_Y               = $61
 ENEMY_STEP_COUNT       = $68
 SHADOW_X               = $69
 SHADOW_Y               = $6a
-ENEMY_ACTIVITY         = $6b
 SHADOW_APPEARANCE_TIMER = $6b  ;warning at 2, Shadow released at 3; mystery may force 5
 SHADOW_HIT_TIMER       = $6c
 ENEMY_SHOT_X           = $6d    ;seven entries
@@ -101,11 +110,15 @@ ROBO_DROID_Y           = ENEMY2_Y
 ROBO_DROID_DIRECTION   = ENEMY2_DIRECTION
 SNAP_JUMPER_X          = ENEMY3_X
 SNAP_JUMPER_Y          = ENEMY3_Y
-ROOM_NUMBER            = $59    ;0-$1f normal rooms; $21 is the lair layout
+ROOM_NUMBER            = $59    ;0-31 normal rooms; 33 is the lair layout
 ROOM_SPEED_INDEX       = $2a    ;increases every eight rooms, indexes update-rate masks
 TITLE_MUSIC_DELAY      = $82
 SKILL_KEY_LATCH        = $85
 SKILL_LEVEL            = $86    ;0=beginner, 1=novice, 2=advanced, 3=expert
+SKILL_BEGINNER         = 0
+SKILL_NOVICE           = 1
+SKILL_ADVANCED         = 2
+SKILL_EXPERT           = 3
 LIVES_REMAINING        = $87
 KEY_FLAGS              = $88    ;bits $80/$40/$20: keys; $08/$04/$02: matching opened keyholes
 EXTRA_LIFE_COLLECTED_FLAGS = $89 ;four entries for rooms $01,$02,$0c,$1a
@@ -113,11 +126,12 @@ MYSTERY_COLLECTED_FLAGS = $8d    ;four entries for rooms $00,$08,$18,$0b
 MYSTERY_OBJECT_X       = $91
 MYSTERY_OBJECT_Y       = $92
 HIT_TEST_MODE          = $93    ;zero permits explosion chains; nonzero tests ION SHIVs only
-SCORE_BCD              = $94    ;three bytes, most significant first
-HIGH_SCORE_BCD         = $97    ;three bytes, most significant first
-SCORE_DIGIT_BYTE       = $83    ;packed-BCD byte being split into two displayed digits
-SCORE_SAVED_Y          = $84    ;preserves score-byte index while drawing one digit
+SCORE_BCD              = $94    ;three binary-coded decimal (BCD) bytes, most significant first
+HIGH_SCORE_BCD         = $97    ;three BCD bytes, most significant first
 LEVEL_NUMBER           = $9c    ;0=level one, 1=level two, 2=lair
+LEVEL_ONE              = 0
+LEVEL_TWO              = 1
+LEVEL_LAIR             = 2
 ROOM_27_BARRIER_PHASE  = $9a    ;0-7 moving gap, $ff after an ION SHIV passes through
 ROOM_EXIT_RUSH_TIMER   = $9d    ;leaving within 40 main-loop iterations forces maximum enemies
 ION_SHIV_SOUND_TIMER   = $9e
@@ -127,23 +141,6 @@ REWARD_SOUND_TIMER     = $a1
 EXPLOSION_SOUND_TIMER  = $9b
 LAIR_TARGET_X          = $a2
 LAIR_TARGET_Y          = $a3
-
-; Graphic data used by the entity draw routines. These symbolic addresses also identify the
-; otherwise anonymous bitmap-data stream beginning at the electric-wall seed graphics.
-KEYHOLE_GRAPHIC        = $b6f3
-KEY_GRAPHIC            = $b703
-QUESTION_GRAPHIC_1     = $b70f
-QUESTION_GRAPHIC_2     = $b719
-EXTRA_LIFE_BOTTLE_1    = $b723
-EXTRA_LIFE_BOTTLE_2    = $b72e
-ROBO_DROID_FRAME_1     = $b739
-SPIRAL_DRONE_FRAME_1   = $b771
-SNAP_JUMPER_GRAPHIC    = $b791
-SHAMUS_FRAME_1         = $b799
-ION_SHIV_FRAME_1       = $b7db
-EXPLOSION_FRAME_1      = $b81b
-ENEMY_SHOT_GRAPHIC_1   = $b83b
-SHADOW_FRAME_1         = $b759
 
 ;--------------------------------------------------------------------------------------------------
 ; Start program, game was originally a cartridge so no basic loader.
@@ -159,18 +156,18 @@ SHADOW_FRAME_1         = $b759
 ;--------------------------------------------------------------------------------------------------
 start_of_program
 	sei
-	; Poison the normal RAM NMI vector with the address of KERNAL data rather than executable code.
-	; The cartridge header separately supplies _KERNAL_EXIT_INTERRUPT as its safe NMI return entry.
-	lda #>_KERNAL_RS232_TIMING_DATA
+	; Redirect the normal RAM NMI vector to the final RTI of the KERNAL interrupt-exit routine.
+	; The cartridge header separately points to the full register-restoring entry at $FF56.
+	lda #>_KERNAL_RETURN_FROM_INTERRUPT
 	sta _KERNAL_NMI_VECTOR+1
-	lda #<_KERNAL_RS232_TIMING_DATA
+	lda #<_KERNAL_RETURN_FROM_INTERRUPT
 	sta _KERNAL_NMI_VECTOR
 	jsr _KERNAL_INITVIA
-	ldx #$50
+	ldx #80
 	txs
 	jsr configure_display
-	lda #$00
-	sta+2 SKILL_LEVEL                ;force the original three-byte absolute store
+	lda #SKILL_BEGINNER
+	sta+2 SKILL_LEVEL                ;use the original three-byte absolute encoding
 	sta SKILL_LEVEL
 	sta HIGH_SCORE_BCD
 	sta HIGH_SCORE_BCD+1
@@ -181,23 +178,23 @@ start_of_program
 ; Animate every lethal electric-wall cell at once by modifying character definitions $FE and $FF.
 	; Rotate the horizontal-wall rows right by one pixel and the vertical-wall rows upward by one line.
 animate_electric_walls
-	ldx #$0f
+	ldx #15
 .rotate_horizontal_wall_row
 	lda ELECTRIC_HORIZONTAL_WALL_BITMAP,x
 	lsr
 	bcc .store_horizontal_wall_row
-	ora #$80
+	ora #%10000000 ;$80
 .store_horizontal_wall_row
 	sta ELECTRIC_HORIZONTAL_WALL_BITMAP,x
 	dex
 	bpl .rotate_horizontal_wall_row
 	ldy ELECTRIC_VERTICAL_WALL_BITMAP
-	ldx #$00
+	ldx #0
 .shift_vertical_wall_rows
 	lda ELECTRIC_VERTICAL_WALL_BITMAP+1,x
 	sta ELECTRIC_VERTICAL_WALL_BITMAP,x
 	inx
-	cpx #$0f
+	cpx #15
 	bne .shift_vertical_wall_rows
 	sty ELECTRIC_VERTICAL_WALL_BITMAP+$0f
 	rts
@@ -219,7 +216,7 @@ bit_selection_masks
 
 ; Level two in the state machine is the lair. It always uses the otherwise separate record $21.
 select_lair_room_layout
-	lda #$21
+	lda #33
 	sta ROOM_NUMBER
 	jmp decode_room_wall_bitfields
 
@@ -228,11 +225,13 @@ select_lair_room_layout
 ; bottle/question object, keys, keyholes, level text, and special-room features. X retains the
 ; ROOM_NUMBER*4 record offset while Y scans the eight possible segments in each wall group.
 draw_room_layout
-	ldy #$00
+	ldy #0
 	lda LEVEL_NUMBER
-	cmp #$02
+	cmp #LEVEL_LAIR
 	beq select_lair_room_layout
 decode_room_wall_bitfields
+.saved_wall_x = $83
+.saved_colour_x = $84
 	lda ROOM_NUMBER
 	asl
 	asl
@@ -245,9 +244,9 @@ decode_room_wall_bitfields
 	jsr .draw_vertical_wall_segment
 .next_vertical_a
 	iny
-	cpy #$08
+	cpy #8
 	bne .scan_vertical_group_a
-	ldy #$00
+	ldy #0
 .scan_vertical_group_b
 	lda room_vertical_bits_b,x
 	and bit_selection_masks,y
@@ -256,9 +255,9 @@ decode_room_wall_bitfields
 	jsr .draw_vertical_wall_segment
 .next_vertical_b
 	iny
-	cpy #$08
+	cpy #8
 	bne .scan_vertical_group_b
-	ldy #$00
+	ldy #0
 .scan_horizontal_group_a
 	lda room_horizontal_bits_a,x
 	and bit_selection_masks,y
@@ -267,9 +266,9 @@ decode_room_wall_bitfields
 	jsr .draw_horizontal_wall_segment
 .next_horizontal_a
 	iny
-	cpy #$08
+	cpy #8
 	bne .scan_horizontal_group_a
-	ldy #$00
+	ldy #0
 .scan_horizontal_group_b
 	lda room_horizontal_bits_b,x
 	and bit_selection_masks,y
@@ -278,37 +277,37 @@ decode_room_wall_bitfields
 	jsr .draw_horizontal_wall_segment
 .next_horizontal_b
 	iny
-	cpy #$08
+	cpy #8
 	bne .scan_horizontal_group_b
 	jsr .draw_room_number
 	jsr .draw_closed_keyhole_wall
 	jmp .place_extra_life_object
 
 .draw_vertical_wall_segment
-	stx $83
+	stx .saved_wall_x
 	tax
 	jsr .draw_vertical_wall_cell
 	jsr .draw_vertical_wall_cell
 	jsr .draw_vertical_wall_cell
 	jsr .draw_vertical_wall_cell
-	ldx $83
+	ldx .saved_wall_x
 	rts
 
 .draw_vertical_wall_cell
-	lda #$fe
+	lda #254
 	sta _SCREEN_MATRIX_ADDR,x
 	jsr .select_vertical_wall_colour
 	sta _COLOUR_SCREEN_ADDR,x
 	txa
 	clc
-	adc #$16
+	adc #22
 	tax
 	rts
 
 .draw_horizontal_wall_segment
-	stx $83
+	stx .saved_wall_x
 	tax
-	lda #$ff
+	lda #255
 	sta _SCREEN_MATRIX_ADDR,x
 	inx
 	sta _SCREEN_MATRIX_ADDR,x
@@ -317,15 +316,15 @@ decode_room_wall_bitfields
 	inx
 	sta _SCREEN_MATRIX_ADDR,x
 	txa
-	cmp #$45
+	cmp #69
 	beq .colour_horizontal_wall_segment
-	cmp #$87
+	cmp #135
 	beq .colour_horizontal_wall_segment
-	cmp #$57
+	cmp #87
 	beq .colour_horizontal_wall_segment
-	cmp #$99
+	cmp #153
 	beq .colour_horizontal_wall_segment
-	lda #$ff
+	lda #255
 	inx
 	sta _SCREEN_MATRIX_ADDR,x
 	jsr .select_horizontal_wall_colour
@@ -340,74 +339,74 @@ decode_room_wall_bitfields
 	sta _COLOUR_SCREEN_ADDR,x
 	dex
 	sta _COLOUR_SCREEN_ADDR,x
-	ldx $83
+	ldx .saved_wall_x
 	rts
 
 .room_word_text
 	!byte $52,$0f,$0f,$0d
 
 .draw_room_number
-	ldx #$00
-	stx $08
-	lda #$a0
-	sta $09
+	ldx #0
+	stx DRAW_X
+	lda #160
+	sta DRAW_Y
 .draw_room_word
 	lda .room_word_text,x
 	jsr draw_text_character_and_advance
-	cpx #$04
+	cpx #4
 	bne .draw_room_word
-	lda #$08
-	sta $08
-	lda #$a8
-	sta $09
+	lda #8
+	sta DRAW_X
+	lda #168
+	sta DRAW_Y
 	lda ROOM_NUMBER
-	cmp #$1e
+	cmp #30
 	bcs .draw_thirties_digit
-	cmp #$14
+	cmp #20
 	bcs .draw_twenties_digit
-	cmp #$0a
+	cmp #10
 	bcs .draw_tens_digit
 .draw_room_digit
 	clc
-	adc #$30
+	adc #48
 	jsr draw_character
 	jmp advance_draw_x_by_8
 
 .draw_thirties_digit
-	lda #$03
+	lda #3
 	jsr .draw_room_digit
 	lda ROOM_NUMBER
 	sec
-	sbc #$1e
+	sbc #30
 	jmp .draw_room_digit
 
 .draw_twenties_digit
-	lda #$02
+	lda #2
 	jsr .draw_room_digit
 	lda ROOM_NUMBER
 	sec
-	sbc #$14
+	sbc #20
 	jmp .draw_room_digit
 
 .draw_tens_digit
-	lda #$01
+	lda #1
 	jsr .draw_room_digit
 	lda ROOM_NUMBER
 	sec
-	sbc #$0a
+	sbc #10
 	jmp .draw_room_digit
 
 .place_extra_life_object
-	lda #$00
+	lda #0
 	sta EXTRA_LIFE_OBJECT_X
 	lda ROOM_NUMBER
-	cmp #$01
+	cmp #1
 	beq .test_room_01_extra_life
-	cmp #$0c
+	cmp #12
 	beq .test_room_0c_extra_life
-	cmp #$02
+	cmp #2
 	beq .test_room_02_extra_life
-	cmp #$1a
+	cmp #26
 	beq .test_room_1a_extra_life
 .skip_extra_life
 	jmp .place_mystery_object
@@ -433,22 +432,22 @@ decode_room_wall_bitfields
 	jmp .draw_extra_life
 
 .draw_extra_life
-	lda #$78
+	lda #120
 	sta EXTRA_LIFE_OBJECT_X
-	lda #$46
+	lda #70
 	sta EXTRA_LIFE_OBJECT_Y
 	jsr draw_extra_life_object
 .place_mystery_object
-	lda #$00
+	lda #0
 	sta MYSTERY_OBJECT_X
 	lda ROOM_NUMBER
-	cmp #$00
+	cmp #0
 	beq .test_room_00_mystery
-	cmp #$08
+	cmp #8
 	beq .test_room_08_mystery
-	cmp #$18
+	cmp #24
 	beq .test_room_18_mystery
-	cmp #$0b
+	cmp #11
 	beq .test_room_0b_mystery
 .skip_mystery_object
 	jmp .prepare_key_colours
@@ -472,218 +471,218 @@ decode_room_wall_bitfields
 	lda MYSTERY_COLLECTED_FLAGS+3
 	bne .skip_mystery_object
 .draw_mystery_object
-	lda #$54
+	lda #84
 	sta MYSTERY_OBJECT_X
-	lda #$46
+	lda #70
 	sta MYSTERY_OBJECT_Y
 	jsr draw_bonus_object
 .prepare_key_colours
-	lda #$02
+	lda #VIC_COLOUR_RED
 	sta _COLOUR_SCREEN_ADDR+$ad
 	sta _COLOUR_SCREEN_ADDR+$af
-	lda #$01
+	lda #VIC_COLOUR_WHITE
 	sta _COLOUR_SCREEN_ADDR+$c3
 	sta _COLOUR_SCREEN_ADDR+$c5
-	lda #$06
+	lda #VIC_COLOUR_BLUE
 	sta _COLOUR_SCREEN_ADDR+$d9
 	sta _COLOUR_SCREEN_ADDR+$db
 	lda ROOM_NUMBER
-	cmp #$11
+	cmp #17
 	beq .test_room_11_key
-	cmp #$06
+	cmp #6
 	beq .test_room_06_key
-	cmp #$10
+	cmp #16
 	beq .test_room_10_key
 	jmp .draw_collected_keys
 
 .test_room_11_key
-	ldy #$02
+	ldy #VIC_COLOUR_RED
 	lda KEY_FLAGS
-	and #$80
+	and #%10000000 ;$80
 	beq .draw_room_key
 	jmp .draw_collected_keys
 
 .test_room_06_key
-	ldy #$01
+	ldy #VIC_COLOUR_WHITE
 	lda KEY_FLAGS
-	and #$40
+	and #%01000000 ;$40
 	beq .draw_room_key
 	jmp .draw_collected_keys
 
 .test_room_10_key
-	ldy #$06
+	ldy #VIC_COLOUR_BLUE
 	lda KEY_FLAGS
-	and #$20
+	and #%00100000 ;$20
 	beq .draw_room_key
 	jmp .draw_collected_keys
 
 .draw_room_key
 	sty _COLOUR_SCREEN_ADDR+$62
-	lda #$42
-	sta $09
-	lda #$50
-	sta $08
+	lda #66
+	sta DRAW_Y
+	lda #80
+	sta DRAW_X
 	jsr draw_key
 .draw_collected_keys
-	lda #$98
-	sta $08
+	lda #152
+	sta DRAW_X
 	lda KEY_FLAGS
-	and #$80
+	and #%10000000 ;$80
 	bne .draw_red_key_icon
 .test_white_key_icon
 	lda KEY_FLAGS
-	and #$40
+	and #%01000000 ;$40
 	bne .draw_white_key_icon
 .test_blue_key_icon
 	lda KEY_FLAGS
-	and #$20
+	and #%00100000 ;$20
 	bne .draw_blue_key_icon
 	jmp .draw_opened_keyholes
 
 .draw_red_key_icon
-	lda #$72
-	sta $09
+	lda #114
+	sta DRAW_Y
 	jsr draw_key
 	jmp .test_white_key_icon
 
 .draw_white_key_icon
-	lda #$82
-	sta $09
+	lda #130
+	sta DRAW_Y
 	jsr draw_key
 	jmp .test_blue_key_icon
 
 .draw_blue_key_icon
-	lda #$92
-	sta $09
+	lda #146
+	sta DRAW_Y
 	jsr draw_key
 .draw_opened_keyholes
-	lda #$a8
-	sta $08
+	lda #168
+	sta DRAW_X
 	lda KEY_FLAGS
-	and #$08
+	and #%00001000 ;$08
 	bne .draw_red_keyhole_icon
 .test_white_keyhole_icon
 	lda KEY_FLAGS
-	and #$04
+	and #%00000100 ;$04
 	bne .draw_white_keyhole_icon
 .test_blue_keyhole_icon
 	lda KEY_FLAGS
-	and #$02
+	and #%00000010 ;$02
 	bne .draw_blue_keyhole_icon
 	jmp .place_room_keyhole
 
 .draw_red_keyhole_icon
-	lda #$70
-	sta $09
+	lda #112
+	sta DRAW_Y
 	jsr draw_keyhole
 	jmp .test_white_keyhole_icon
 
 .draw_white_keyhole_icon
-	lda #$80
-	sta $09
+	lda #128
+	sta DRAW_Y
 	jsr draw_keyhole
 	jmp .test_blue_keyhole_icon
 
 .draw_blue_keyhole_icon
-	lda #$90
-	sta $09
+	lda #144
+	sta DRAW_Y
 	jsr draw_keyhole
 .place_room_keyhole
 	lda ROOM_NUMBER
-	cmp #$09
+	cmp #9
 	beq .test_room_09_keyhole
-	cmp #$14
+	cmp #20
 	beq .test_room_14_keyhole
-	cmp #$1f
+	cmp #31
 	beq .test_room_1f_keyhole
 	jmp .draw_level_text
 
 .test_room_09_keyhole
-	ldy #$02
+	ldy #VIC_COLOUR_RED
 	lda KEY_FLAGS
-	and #$08
+	and #%00001000 ;$08
 	beq .draw_room_keyhole
 	jmp .draw_level_text
 
 .test_room_14_keyhole
-	ldy #$01
+	ldy #VIC_COLOUR_WHITE
 	lda KEY_FLAGS
-	and #$04
+	and #%00000100 ;$04
 	beq .draw_room_keyhole
 	jmp .draw_level_text
 
 .test_room_1f_keyhole
-	ldy #$06
+	ldy #VIC_COLOUR_BLUE
 	lda KEY_FLAGS
-	and #$02
+	and #%00000010 ;$02
 	beq .draw_room_keyhole
 	jmp .draw_level_text
 
 .draw_room_keyhole
 	sty _COLOUR_SCREEN_ADDR+$69
-	lda #$40
-	sta $09
-	lda #$88
-	sta $08
+	lda #64
+	sta DRAW_Y
+	lda #136
+	sta DRAW_X
 	jsr draw_keyhole
 .draw_level_text
 	jmp .draw_level_heading
 
 .draw_closed_keyhole_wall
 	lda ROOM_NUMBER
-	cmp #$09
+	cmp #9
 	beq .test_room_09_wall
-	cmp #$14
+	cmp #20
 	beq .test_room_14_wall
-	cmp #$1f
+	cmp #31
 	beq .test_room_1f_wall
 .closed_wall_done
 	rts
 
 .test_room_09_wall
 	lda KEY_FLAGS
-	and #$08
+	and #%00001000 ;$08
 	bne .closed_wall_done
 .draw_keyhole_wall
-	lda #$57
+	lda #87
 	jmp .draw_vertical_wall_segment
 
 .test_room_14_wall
 	lda KEY_FLAGS
-	and #$04
+	and #%00000100 ;$04
 	bne .closed_wall_done
 	jmp .draw_keyhole_wall
 
 .test_room_1f_wall
 	lda KEY_FLAGS
-	and #$02
+	and #%00000010 ;$02
 	bne .closed_wall_done
 	jmp .draw_keyhole_wall
 
 .select_horizontal_wall_colour
-	stx $84
+	stx .saved_colour_x
 	lda ROOM_NUMBER
-	and #$03
+	and #%00000011 ;$03
 	tax
 	lda .wall_colour_values,x
-	ldx $84
+	ldx .saved_colour_x
 	rts
 
 ;--------------------------------------------------------------------------------------------------
 ; VIC colour values selected by the wall-colour routines: yellow, green, cyan and purple.
 .wall_colour_values
-	!byte $07,$05,$03,$04
+	!byte VIC_COLOUR_YELLOW,VIC_COLOUR_GREEN,VIC_COLOUR_CYAN,VIC_COLOUR_PURPLE
 
 .select_vertical_wall_colour
 	; Index bytes of .select_horizontal_wall_colour as a compact room-dependent pattern table.
-	stx $84
+	stx .saved_colour_x
 	lda ROOM_NUMBER
 	tax
 	lda .select_horizontal_wall_colour,x
-	and #$03
+	and #%00000011 ;$03
 	tax
 	lda .wall_colour_values,x
-	ldx $84
+	ldx .saved_colour_x
 	rts
 
 ;--------------------------------------------------------------------------------------------------
@@ -698,47 +697,47 @@ decode_room_wall_bitfields
 	!pet "lair"
 
 .draw_level_heading
-	lda #$32
-	sta $08
-	lda #$a0
-	sta $09
+	lda #50
+	sta DRAW_X
+	lda #160
+	sta DRAW_Y
 	lda LEVEL_NUMBER
-	cmp #$02
+	cmp #LEVEL_LAIR
 	beq .draw_level_name
-	ldx #$00
+	ldx #0
 .draw_level_word
 	lda .level_word,x
 	jsr draw_text_character_and_advance
-	cpx #$05
+	cpx #5
 	bne .draw_level_word
 .draw_level_name
-	ldx #$00
-	lda #$3a
-	sta $08
-	lda #$a8
-	sta $09
+	ldx #0
+	lda #58
+	sta DRAW_X
+	lda #168
+	sta DRAW_Y
 	lda LEVEL_NUMBER
 	beq .draw_level_one
-	cmp #$01
+	cmp #LEVEL_TWO
 	beq .draw_level_two
 .draw_lair_name
 	lda .lair_word,x
 	jsr draw_text_character_and_advance
-	cpx #$04
+	cpx #4
 	bne .draw_lair_name
 	rts
 
 .draw_level_one
 	lda .level_one_word,x
 	jsr draw_text_character_and_advance
-	cpx #$03
+	cpx #3
 	bne .draw_level_one
 	rts
 
 .draw_level_two
 	lda .level_two_word,x
 	jsr draw_text_character_and_advance
-	cpx #$03
+	cpx #3
 	bne .draw_level_two
 	rts
 
@@ -751,22 +750,22 @@ handle_player_collision_and_room_exit
 	dec COLLISION_X
 	lda PLAYER_Y
 	clc
-	adc #$02
+	adc #2
 	sta COLLISION_Y
 	jsr test_2x2_background_collision
 	beq handle_player_death
 	jsr test_player_enemy_collisions
 	beq handle_player_death
 	lda PLAYER_X
-	cmp #$a6
+	cmp #166
 	bcs .exit_right
-	cmp #$03
+	cmp #3
 	bcc .exit_left
 	lda PLAYER_Y
-	cmp #$98
+	cmp #152
 	bcs .exit_bottom
 	lda PLAYER_Y
-	cmp #$02
+	cmp #2
 	bcc .exit_top
 	jmp handle_keys_and_keyholes
 
@@ -774,31 +773,31 @@ handle_player_collision_and_room_exit
 	; vertical exits alter it by six. Missing connections are enforced by the drawn walls.
 .exit_right
 	inc ROOM_NUMBER                 ;right edge: next room
-	lda #$06
+	lda #6
 	sta PLAYER_X
 	jmp initialize_current_room
 
 .exit_left
 	dec ROOM_NUMBER                 ;left edge: previous room
-	lda #$a2
+	lda #162
 	sta PLAYER_X
 	jmp initialize_current_room
 
 .exit_top
 	lda ROOM_NUMBER                 ;top edge: one map row up
 	sec
-	sbc #$06
+	sbc #6
 	sta ROOM_NUMBER
-	lda #$92
+	lda #146
 	sta PLAYER_Y
 	jmp initialize_current_room
 
 .exit_bottom
 	lda ROOM_NUMBER                 ;bottom edge: one map row down
 	clc
-	adc #$06
+	adc #6
 	sta ROOM_NUMBER
-	lda #$06
+	lda #6
 	sta PLAYER_Y
 	jmp initialize_current_room
 
@@ -817,17 +816,17 @@ life_icon_y_positions
 draw_lives_remaining
 	lda LIVES_REMAINING
 	beq .life_display_done
-	cmp #$09
+	cmp #9
 	bcc .cap_life_count
-	lda #$09
+	lda #9
 .cap_life_count
 	tax
 	dex
 .draw_next_life
 	lda life_icon_x_positions,x
-	sta $08
+	sta DRAW_X
 	lda life_icon_y_positions,x
-	sta $09
+	sta DRAW_Y
 	jsr select_life_icon_graphic
 	dex
 	bpl .draw_next_life
@@ -835,96 +834,97 @@ draw_lives_remaining
 	rts
 
 ;--------------------------------------------------------------------------------------------------
-; Animate Shamus's destruction, remove a life, then choose a safe room-specific respawn edge.
+; Display Shamus's three-part "OUCH!" graphic, animate his destruction, remove a life, then choose
+; a safe room-specific respawn edge.
 handle_player_death
 	jsr .play_death_animation
 	dec LIVES_REMAINING
 	lda LIVES_REMAINING
-	cmp #$ff
+	cmp #255
 	beq .return_to_title_after_game_over
 	lda ROOM_NUMBER
-	cmp #$06
+	cmp #6
 	beq .respawn_at_right_edge
-	cmp #$0b
+	cmp #11
 	beq .respawn_at_top_edge
-	cmp #$0c
+	cmp #12
 	beq .respawn_at_right_edge
-	cmp #$10
+	cmp #16
 	beq .respawn_at_top_edge
-	cmp #$11
+	cmp #17
 	beq .respawn_at_top_edge
-	cmp #$12
+	cmp #18
 	beq .respawn_at_right_edge
-	cmp #$14
+	cmp #20
 	beq .respawn_at_top_edge
-	cmp #$18
+	cmp #24
 	beq .respawn_at_top_edge
-	cmp #$19
+	cmp #25
 	beq .respawn_at_right_edge
-	cmp #$1e
+	cmp #30
 	beq .respawn_at_right_edge
-	cmp #$1b
+	cmp #27
 	beq .respawn_at_right_edge
-	lda #$0a
+	lda #10
 	sta PLAYER_X
 .respawn_at_middle_height
-	lda #$42
+	lda #66
 	sta PLAYER_Y
 	jmp initialize_current_room
 
 .respawn_at_right_edge
-	lda #$a2
-	sta $0a
+	lda #162
+	sta PLAYER_X
 	jmp .respawn_at_middle_height
 
 .respawn_at_top_edge
-	lda #$06
+	lda #6
 	sta PLAYER_Y
-	lda #$54
+	lda #84
 	sta PLAYER_X
 	jmp initialize_current_room
 
 .play_death_animation
-	lda #$b8
+	lda #>SHAMUS_DEATH_OUCH_LEFT
 	sta GRAPHIC_PTR+1
-	lda #$41
+	lda #<SHAMUS_DEATH_OUCH_LEFT
 	sta GRAPHIC_PTR
-	lda #$00
+	lda #0
 	sta ROOM_EXIT_RUSH_TIMER
 	lda PLAYER_X
-	cmp #$90
+	cmp #144
 	bcs .animate_player_fragments
 	clc
-	adc #$08
+	adc #8
 	sta DRAW_X
 	lda PLAYER_Y
 	sec
-	sbc #$05
+	sbc #5
 	sta DRAW_Y
-	lda #$0b
+	lda #11  ;12-row graphic: final row index
 	jsr xor_draw_shifted_bitmap
 	lda DRAW_X
 	clc
-	adc #$08
+	adc #8
 	sta DRAW_X
-	lda #$b8
+	lda #>SHAMUS_DEATH_OUCH_MIDDLE
 	sta GRAPHIC_PTR+1
-	lda #$4d
+	lda #<SHAMUS_DEATH_OUCH_MIDDLE
 	sta GRAPHIC_PTR
-	lda #$0b
+	lda #11  ;12-row graphic: final row index
 	jsr xor_draw_shifted_bitmap
 	lda DRAW_X
 	clc
-	adc #$08
+	adc #8
 	sta DRAW_X
-	lda #$b8
+	lda #>SHAMUS_DEATH_OUCH_RIGHT
 	sta GRAPHIC_PTR+1
-	lda #$59
+	lda #<SHAMUS_DEATH_OUCH_RIGHT
 	sta GRAPHIC_PTR
-	lda #$0b
+	lda #11  ;12-row graphic: final row index
 	jsr xor_draw_shifted_bitmap
 .animate_player_fragments
-	ldx #$00
+	ldx #0
 .death_animation_loop
 	jsr draw_player
 	jsr update_random_number
@@ -948,92 +948,92 @@ handle_player_death
 ; Touching a key or an unlocked matching keyhole rebuilds the room so the changed object vanishes.
 handle_keys_and_keyholes
 	lda PLAYER_Y
-	cmp #$38
+	cmp #56
 	bcc .check_room_27_barrier
-	cmp #$50
+	cmp #80
 	bcs .check_room_27_barrier
 	lda PLAYER_X
-	cmp #$48
+	cmp #72
 	bcc .test_keyhole_position
-	cmp #$58
+	cmp #88
 	bcs .test_keyhole_position
 	lda ROOM_NUMBER
-	cmp #$11
+	cmp #17
 	beq .collect_red_key
-	cmp #$06
+	cmp #6
 	beq .collect_white_key
-	cmp #$10
+	cmp #16
 	beq .collect_blue_key
 .test_keyhole_position
 	lda PLAYER_X
-	cmp #$80
+	cmp #128
 	bcc .check_room_27_barrier
-	cmp #$90
+	cmp #144
 	bcs .check_room_27_barrier
 	lda ROOM_NUMBER
-	cmp #$09
+	cmp #9
 	beq .open_red_keyhole
-	cmp #$14
+	cmp #20
 	beq .open_white_keyhole
-	cmp #$1f
+	cmp #31
 	beq .open_blue_keyhole
 .check_room_27_barrier
 	jmp update_room_27_moving_barrier
 
 .collect_red_key
 	lda KEY_FLAGS
-	and #$80
+	and #%10000000 ;$80
 	bne .check_room_27_barrier
 	lda KEY_FLAGS
-	ora #$80
+	ora #%10000000 ;$80
 	sta KEY_FLAGS
 	jmp rebuild_current_room_after_object_change
 
 .collect_white_key
 	lda KEY_FLAGS
-	and #$40
+	and #%01000000 ;$40
 	bne .check_room_27_barrier
 	lda KEY_FLAGS
-	ora #$40
+	ora #%01000000 ;$40
 	sta KEY_FLAGS
 	jmp rebuild_current_room_after_object_change
 
 .collect_blue_key
 	lda KEY_FLAGS
-	and #$20
+	and #%00100000 ;$20
 	bne .check_room_27_barrier
 	lda KEY_FLAGS
-	ora #$20
+	ora #%00100000 ;$20
 	sta KEY_FLAGS
 	jmp rebuild_current_room_after_object_change
 
 .open_red_keyhole
 	lda KEY_FLAGS
-	and #$88
-	cmp #$80
+	and #%10001000 ;$88
+	cmp #%10000000 ;$80
 	bne .check_room_27_barrier
 	lda KEY_FLAGS
-	ora #$08
+	ora #%00001000 ;$08
 	sta KEY_FLAGS
 	jmp rebuild_current_room_after_object_change
 
 .open_white_keyhole
 	lda KEY_FLAGS
-	and #$44
-	cmp #$40
+	and #%01000100 ;$44
+	cmp #%01000000 ;$40
 	bne .check_room_27_barrier
 	lda KEY_FLAGS
-	ora #$04
+	ora #%00000100 ;$04
 	sta KEY_FLAGS
 	jmp rebuild_current_room_after_object_change
 
 .open_blue_keyhole
 	lda KEY_FLAGS
-	and #$22
-	cmp #$20
+	and #%00100010 ;$22
+	cmp #%00100000 ;$20
 	bne .check_room_27_barrier
 	lda KEY_FLAGS
-	ora #$02
+	ora #%00000010 ;$02
 	sta KEY_FLAGS
 	jmp rebuild_current_room_after_object_change
 
@@ -1045,51 +1045,51 @@ handle_keys_and_keyholes
 ; Reaching it permanently removes the barrier by changing its phase to $FF and rebuilding the room.
 update_room_27_moving_barrier
 	lda ROOM_NUMBER
-	cmp #$1b
+	cmp #27
 	bne .continue_main_game_loop
 	lda ROOM_27_BARRIER_PHASE
-	cmp #$ff
+	cmp #255
 	beq .continue_main_game_loop
 	lda FRAME_COUNTER
-	and #$07
+	and #%00000111 ;$07
 	bne .draw_barrier
 	inc ROOM_27_BARRIER_PHASE
 	lda ROOM_27_BARRIER_PHASE
-	and #$07
+	and #%00000111 ;$07
 	sta ROOM_27_BARRIER_PHASE
 .draw_barrier
-	ldy #$1b
+	ldy #27
 .draw_barrier_cell
-	lda #$fe
+	lda #254
 	sta _SCREEN_MATRIX_ADDR,y
-	lda #$07
+	lda #VIC_COLOUR_YELLOW
 	sta _COLOUR_SCREEN_ADDR,y
 	tya
 	clc
-	adc #$0b
+	adc #11
 	tay
-	cpy #$c2
+	cpy #194
 	bcc .draw_barrier_cell
-	lda #$26
+	lda #38
 	ldx ROOM_27_BARRIER_PHASE
 	beq .clear_gap
 .advance_gap_position
 	clc
-	adc #$16
+	adc #22
 	dex
 	bne .advance_gap_position
 .clear_gap
 	tay
-	lda #$00
+	lda #0
 	sta _SCREEN_MATRIX_ADDR,y
 	sta $01f5,y
-	ldx #$02
+	ldx #2
 .test_next_ion_shiv
 	lda PLAYER_SHOT_X,x
 	beq .next_ion_shiv
-	cmp #$6e
+	cmp #110
 	bcs .next_ion_shiv
-	cmp #$50
+	cmp #80
 	bcc .next_ion_shiv
 	jmp .remove_barrier
 
@@ -1099,36 +1099,36 @@ update_room_27_moving_barrier
 	jmp main_game_loop
 
 .remove_barrier
-	lda #$ff
+	lda #255
 	sta ROOM_27_BARRIER_PHASE
 	jmp initialize_current_room
 
 .player_collision_detected
-	lda #$00
+	lda #0
 	rts
 
 ;--------------------------------------------------------------------------------------------------
 ; Return zero if Shamus overlaps an enemy shot, any ordinary enemy, the Shadow, or the lair target.
 test_player_enemy_collisions
-	ldx #$06
+	ldx #6
 .test_enemy_shot
 	lda ENEMY_SHOT_X,x
 	beq .next_enemy_shot
 	sec
 	sbc PLAYER_X
-	cmp #$06
+	cmp #6
 	bcs .next_enemy_shot
 	lda ENEMY_SHOT_Y,x
 	sec
-	sbc #$02
+	sbc #2
 	sec
 	sbc PLAYER_Y
-	cmp #$07
+	cmp #7
 	bcc .player_collision_detected
 .next_enemy_shot
 	dex
 	bpl .test_enemy_shot
-	ldx #$06
+	ldx #6
 .test_spiral_drone
 	lda SPIRAL_DRONE_X,x
 	beq .next_spiral_drone
@@ -1140,7 +1140,7 @@ test_player_enemy_collisions
 .next_spiral_drone
 	dex
 	bpl .test_spiral_drone
-	ldx #$06
+	ldx #6
 .test_robo_droid
 	lda ROBO_DROID_X,x
 	beq .next_robo_droid
@@ -1152,7 +1152,7 @@ test_player_enemy_collisions
 .next_robo_droid
 	dex
 	bpl .test_robo_droid
-	ldx #$06
+	ldx #6
 .test_snap_jumper
 	lda SNAP_JUMPER_X,x
 	beq .next_snap_jumper
@@ -1173,7 +1173,7 @@ test_player_enemy_collisions
 	beq .player_collision_detected
 .test_lair_target
 	lda LEVEL_NUMBER
-	cmp #$02
+	cmp #LEVEL_LAIR
 	bne .no_player_collision
 	lda LAIR_TARGET_X
 	sta DRAW_X
@@ -1182,14 +1182,14 @@ test_player_enemy_collisions
 	jsr test_player_object_overlap
 	beq .player_collision_detected
 .no_player_collision
-	lda #$01
+	lda #1
 	rts
 
 ;--------------------------------------------------------------------------------------------------
 ; Silence all four VIC sound generators. The entry below preserves the bass and alto voices and is
 ; used when only an explosion's soprano/noise pair has finished.
 silence_sound_generators
-	lda #$00
+	lda #0
 	sta _VIC_SOUND_BASS
 	sta _VIC_SOUND_ALTO
 silence_soprano_and_noise
@@ -1206,20 +1206,20 @@ update_game_sound_effects
 	beq silence_soprano_and_noise
 	inc EXPLOSION_SOUND_TIMER
 	lda EXPLOSION_SOUND_TIMER
-	cmp #$09
+	cmp #9
 	beq .finish_explosion
 	asl
 	asl
-	ora #$80
+	ora #%10000000 ;$80
 	sta _VIC_SOUND_NOISE
-	eor #$ff
-	ora #$80
-	sbc #$14
+	eor #%11111111 ;$ff
+	ora #%10000000 ;$80
+	sbc #20
 	sta _VIC_SOUND_SOPRANO
 	rts
 
 .finish_explosion
-	lda #$00
+	lda #0
 	sta EXPLOSION_SOUND_TIMER
 	jmp silence_soprano_and_noise
 
@@ -1230,17 +1230,17 @@ update_game_sound_effects
 	asl
 	asl
 	clc
-	adc #$96
+	adc #150
 	sta _VIC_SOUND_BASS
 	lda ION_SHIV_SOUND_TIMER
 	asl
 	asl
 	clc
-	adc #$96
+	adc #150
 	sta _VIC_SOUND_ALTO
 	dec ION_SHIV_SOUND_TIMER
 	bne .update_secondary_effects
-	lda #$00
+	lda #0
 	sta _VIC_SOUND_BASS
 	sta _VIC_SOUND_ALTO
 .update_secondary_effects
@@ -1265,7 +1265,7 @@ title_note_bass
 ;--------------------------------------------------------------------------------------------------
 ; Add 50 points 256 times (12,800 points total) while sweeping three sound voices.
 award_level_completion_bonus
-	lda #$00
+	lda #0
 	sta FRAME_COUNTER
 	jsr silence_sound_generators
 .award_next_bonus_increment
@@ -1282,12 +1282,12 @@ award_level_completion_bonus
 ; tone used when a bottle or mystery symbol is collected.
 update_secondary_sound_effects
 	lda SHADOW_APPEARANCE_TIMER
-	cmp #$02
+	cmp #2
 	bne .update_reward_sound
 	lda FRAME_COUNTER
-	cmp #$e6
+	cmp #230
 	bcc .update_reward_sound
-	cmp #$fe
+	cmp #254
 	bcs .end_shadow_warning
 	lda FRAME_COUNTER
 	sta _VIC_SOUND_BASS
@@ -1301,11 +1301,11 @@ update_secondary_sound_effects
 	lda REWARD_SOUND_TIMER
 	beq .secondary_sound_update_done
 	clc
-	adc #$b6
+	adc #182
 	sta _VIC_SOUND_BASS
 	dec REWARD_SOUND_TIMER
 	bne .secondary_sound_update_done
-	lda #$00
+	lda #0
 	sta _VIC_SOUND_BASS
 .secondary_sound_update_done
 	rts
@@ -1314,25 +1314,25 @@ update_secondary_sound_effects
 ; Toggle the keyboard-controlled pause: silence the VIC, wait for release, then for another press
 ; and release before returning to the main game loop.
 handle_pause_key
-	lda #$80
+	lda #%10000000 ;$80
 	sta _VIA_KEYB_ROWS
 	lda _VIA_KEYB_COLS
-	cmp #$df
+	cmp #%11011111 ;$df
 	beq .pause_pressed
 	rts
 
 .pause_pressed
 	jsr silence_sound_generators
 	lda _VIA_KEYB_COLS
-	cmp #$df
+	cmp #%11011111 ;$df
 	beq .pause_pressed
 .wait_for_second_press
 	lda _VIA_KEYB_COLS
-	cmp #$df
+	cmp #%11011111 ;$df
 	bne .wait_for_second_press
 .wait_for_second_release
 	lda _VIA_KEYB_COLS
-	cmp #$df
+	cmp #%11011111 ;$df
 	beq .wait_for_second_release
 	rts
 
@@ -1363,9 +1363,9 @@ draw_text_character_and_advance
 	jsr draw_character
 	jsr advance_draw_x_by_8
 	lda DRAW_X
-	cmp #$b0
+	cmp #176
 	bcc .text_position_ready
-	lda #$00
+	lda #0
 	sta DRAW_X
 	jsr advance_draw_y_by_8
 .text_position_ready
@@ -1376,9 +1376,9 @@ draw_text_character_and_advance
 ; Select a text row, reset the text index, and set the left text margin to 15 pixels.
 set_text_row
 	sta DRAW_Y
-	lda show_title_and_calibration_screen  ;discarded absolute load retained from the original
-	ldx #$00
-	lda #$0f
+	lda show_title_and_calibration_screen  ;reads its first opcode; A is overwritten by lda #15
+	ldx #0
+	lda #15
 	sta DRAW_X
 	rts
 
@@ -1387,7 +1387,7 @@ set_text_row
 advance_draw_x_by_8
 	lda DRAW_X
 	clc
-	adc #$08
+	adc #8
 	sta DRAW_X
 	rts
 
@@ -1396,7 +1396,7 @@ advance_draw_x_by_8
 advance_draw_y_by_8
 	lda DRAW_Y
 	clc
-	adc #$08
+	adc #8
 	sta DRAW_Y
 	rts
 
@@ -1407,99 +1407,99 @@ advance_draw_y_by_8
 show_title_and_calibration_screen
 	jsr clear_and_build_framebuffer
 	lda .colour_title_rows             ;dead read of the following STA opcode, immediately replaced
-	lda #$01
-	sta $1a
-	ldx #$2b
-	lda #$05
+	lda #%00000001 ;$01
+	sta INPUT_DIRECTION_LATCH
+	ldx #43
+	lda #VIC_COLOUR_GREEN
 .colour_title_rows
 	sta _COLOUR_SCREEN_ADDR,x
 	dex
 	bpl .colour_title_rows
-	lda #$00
-	sta $08
-	sta $09
-	ldx #$00
+	lda #0
+	sta DRAW_X
+	sta DRAW_Y
+	ldx #0
 .draw_title_and_credits
 	lda title_and_credit_text,x
 	jsr draw_text_character_and_advance
-	cpx #$58
+	cpx #88
 	bne .draw_title_and_credits
-	lda #$28
-	sta $09
-	lda #$00
-	sta $08
+	lda #40
+	sta DRAW_Y
+	lda #0
+	sta DRAW_X
 	jsr draw_keyhole
-	lda #$3c
-	sta $09
+	lda #60
+	sta DRAW_Y
 	jsr draw_key
-	lda #$62
-	sta $09
+	lda #98
+	sta DRAW_Y
 	jsr select_and_draw_shadow_frame
-	lda #$84
-	sta $09
+	lda #132
+	sta DRAW_Y
 	jsr select_snap_jumper_graphic
-	lda #$30
+	lda #48
 	jsr set_text_row
 .draw_keyhole_name
 	lda keyhole_name,x
 	jsr draw_text_character_and_advance
-	cpx #$07
+	cpx #7
 	bne .draw_keyhole_name
-	lda #$3e
+	lda #62
 	jsr set_text_row
 .draw_key_name
 	lda key_name,x
 	jsr draw_text_character_and_advance
-	cpx #$03
+	cpx #3
 	bne .draw_key_name
-	lda #$4a
+	lda #74
 	jsr set_text_row
 .draw_extra_life_name
 	lda extra_life_name,x
 	jsr draw_text_character_and_advance
-	cpx #$0a
+	cpx #10
 	bne .draw_extra_life_name
-	lda #$56
+	lda #86
 	jsr set_text_row
 .draw_mystery_name
 	lda mystery_name,x
 	jsr draw_text_character_and_advance
-	cpx #$07
+	cpx #7
 	bne .draw_mystery_name
-	lda #$64
+	lda #100
 	jsr set_text_row
 .draw_shadow_name
 	lda shadow_name,x
 	jsr draw_text_character_and_advance
-	cpx #$06
+	cpx #6
 	bne .draw_shadow_name
-	lda #$70
+	lda #112
 	jsr set_text_row
 .draw_robo_droids_name
 	lda robo_droids_name,x
 	jsr draw_text_character_and_advance
-	cpx #$0b
+	cpx #11
 	bne .draw_robo_droids_name
-	lda #$7a
+	lda #122
 	jsr set_text_row
 .draw_spiral_drones_name
 	lda spiral_drones_name,x
 	jsr draw_text_character_and_advance
-	cpx #$0d
+	cpx #13
 	bne .draw_spiral_drones_name
-	lda #$84
+	lda #132
 	jsr set_text_row
 .draw_snap_jumpers_name
 	lda snap_jumpers_name,x
 	jsr draw_text_character_and_advance
-	cpx #$0c
+	cpx #12
 	bne .draw_snap_jumpers_name
 	jsr .animate_legend_objects
-	lda #$00
-	sta $0a
+	lda #0
+	sta PLAYER_X
 	jsr .draw_title_shamus
 	jsr draw_selected_skill_level
-	lda #$00
+	lda #0
 	sta TITLE_MUSIC_STEP
 .title_loop
 	jsr update_title_theme
@@ -1507,55 +1507,55 @@ show_title_and_calibration_screen
 	lda _VIC_CR4
 	bne .wait_for_frame_start
 	jsr .animate_legend_objects
-	inc $0c
+	inc FRAME_COUNTER
 	jsr .animate_legend_objects
-	dec $0c
+	dec FRAME_COUNTER
 	jsr .draw_title_shamus
-	inc $0c
+	inc FRAME_COUNTER
 	inc TITLE_MUSIC_DELAY
-	inc $0a
-	lda $0a
-	cmp #$9f
+	inc PLAYER_X
+	lda PLAYER_X
+	cmp #159
 	bcc .draw_next_title_frame
-	lda #$00
-	sta $0a
+	lda #0
+	sta PLAYER_X
 .draw_next_title_frame
 	jsr .draw_title_shamus
 	jsr poll_skill_level_key
 	jsr read_joystick
-	lda $1a
+	lda INPUT_DIRECTION_LATCH
 	beq .adjust_screen_position
-	lda $06
-	and #$9c
-	cmp #$9c
+	lda JOYSTICK_STATE
+	and #%10011100 ;$9c
+	cmp #%10011100 ;$9c
 	beq .directions_released
-	lda $1a
+	lda INPUT_DIRECTION_LATCH
 	bne .title_loop
 .adjust_screen_position
-	lda $06
-	and #$04
+	lda JOYSTICK_STATE
+	and #%00000100 ;$04
 	beq .move_screen_up
 .test_screen_down
-	lda $06
-	and #$08
+	lda JOYSTICK_STATE
+	and #%00001000 ;$08
 	beq .move_screen_down
 .test_screen_left
-	lda $06
-	and #$10
+	lda JOYSTICK_STATE
+	and #%00010000 ;$10
 	beq .move_screen_left
 .test_screen_right
-	lda $06
-	and #$80
+	lda JOYSTICK_STATE
+	and #%10000000 ;$80
 	beq .move_screen_right
 .test_fire_button
-	lda $06
-	and #$20
+	lda JOYSTICK_STATE
+	and #%00100000 ;$20
 	bne .title_loop
 	jmp silence_sound_generators
 
 .directions_released
-	lda #$00
-	sta $1a
+	lda #%00000000 ;$00
+	sta INPUT_DIRECTION_LATCH
 	jmp .title_loop
 
 .move_screen_up
@@ -1575,48 +1575,48 @@ show_title_and_calibration_screen
 	jmp .test_fire_button
 
 .animate_legend_objects
-	lda #$56
-	sta $09
-	lda #$00
-	sta $08
+	lda #86
+	sta DRAW_Y
+	lda #0
+	sta DRAW_X
 	jsr draw_mystery_question
-	lda #$4a
-	sta $09
+	lda #74
+	sta DRAW_Y
 	jsr draw_extra_life_bottle
-	lda #$70
-	sta $09
+	lda #112
+	sta DRAW_Y
 	jsr select_robo_droid_frame
-	lda #$7a
-	sta $09
+	lda #122
+	sta DRAW_Y
 	jmp select_spiral_drone_frame
 
 .draw_title_shamus
-	lda $0a
-	sta $08
-	lda #$a2
-	sta $09
+	lda PLAYER_X
+	sta DRAW_X
+	lda #162
+	sta DRAW_Y
 	jsr select_and_draw_shadow_frame
-	lda $0a
+	lda PLAYER_X
 	clc
-	adc #$09
-	sta $08
-	lda #$a3
-	sta $09
-	lda #$b7
-	sta $03
-	lda #$af
-	sta $02
-	lda $0c
+	adc #9
+	sta DRAW_X
+	lda #163
+	sta DRAW_Y
+	lda #>SHAMUS_RIGHT_FRAME_1
+	sta GRAPHIC_PTR+1
+	lda #<SHAMUS_RIGHT_FRAME_1
+	sta GRAPHIC_PTR
+	lda FRAME_COUNTER
 	lsr
-	and #$01
+	and #%00000001 ;$01
 	beq draw_small_shamus_graphic
 select_life_icon_graphic
-	lda #$b7
-	sta $03
-	lda #$ba
-	sta $02
+	lda #>SHAMUS_RIGHT_FRAME_2
+	sta GRAPHIC_PTR+1
+	lda #<SHAMUS_RIGHT_FRAME_2
+	sta GRAPHIC_PTR
 draw_small_shamus_graphic
-	lda #$0a
+	lda #10  ;11-row graphic: final row index
 	jmp xor_draw_shifted_bitmap
 
 ;--------------------------------------------------------------------------------------------------
@@ -1633,11 +1633,11 @@ draw_selected_skill_level
 	asl
 	asl
 	tax
-	ldy #$07
-	lda #$64
-	sta $08
-	lda #$90
-	sta $09
+	ldy #7
+	lda #100
+	sta DRAW_X
+	lda #144
+	sta DRAW_Y
 .draw_skill_character
 	tya
 	pha
@@ -1653,24 +1653,24 @@ skill_input_done
 ;--------------------------------------------------------------------------------------------------
 ; Edge-detect the title-screen skill key and cycle Beginner, Novice, Advanced and Expert.
 poll_skill_level_key
-	lda #$80
+	lda #%10000000 ;$80
 	sta _VIA_KEYB_ROWS
 	lda _VIA_KEYB_COLS
-	cmp #$7f
+	cmp #%01111111 ;$7f
 	beq .skill_key_pressed
-	lda #$00
+	lda #0
 	sta SKILL_KEY_LATCH
 	rts
 
 .skill_key_pressed
 	lda SKILL_KEY_LATCH
 	bne skill_input_done
-	lda #$01
+	lda #1
 	sta SKILL_KEY_LATCH
 	jsr draw_selected_skill_level
 	inc SKILL_LEVEL
 	lda SKILL_LEVEL
-	and #$03
+	and #%00000011 ;$03
 	sta SKILL_LEVEL
 	jmp draw_selected_skill_level
 
@@ -1679,20 +1679,20 @@ poll_skill_level_key
 ; four-frame divider; steps $1b, $20 and $25 use eight frames. Between notes the VIC volume decays.
 update_title_theme
 	lda TITLE_MUSIC_STEP
-	cmp #$1b
+	cmp #27
 	beq .use_long_note_delay
-	cmp #$20
+	cmp #32
 	beq .use_long_note_delay
-	cmp #$25
+	cmp #37
 	beq .use_long_note_delay
 	lda TITLE_MUSIC_DELAY
-	and #$03
+	and #%00000011 ;$03
 	bne .decay_volume
 	jmp .advance_note
 
 .use_long_note_delay
 	lda TITLE_MUSIC_DELAY
-	and #$07
+	and #%00000111 ;$07
 	bne .decay_long_note
 .advance_note
 	jsr .wait_before_next_note
@@ -1702,20 +1702,20 @@ update_title_theme
 	lda title_note_voice,x
 	sta _VIC_SOUND_SOPRANO
 	sta _VIC_SOUND_ALTO
-	lda #$01
+	lda #1
 	sta TITLE_MUSIC_DELAY
 	lda title_note_bass,x
 	sta _VIC_SOUND_BASS
-	lda #$0f
+	lda #15
 	sta _VIC_VOLUME_AUX_COLOUR
 	inc TITLE_MUSIC_STEP
 	lda TITLE_MUSIC_STEP
 	asl
 	tax
 	lda title_note_voice,x
-	cmp #$ff
+	cmp #255
 	bne .note_update_done
-	lda #$00
+	lda #0
 	sta TITLE_MUSIC_STEP
 .note_update_done
 	rts
@@ -1725,18 +1725,18 @@ update_title_theme
 .decay_volume
 	dec _VIC_VOLUME_AUX_COLOUR
 	lda _VIC_VOLUME_AUX_COLOUR
-	cmp #$80
+	cmp #128
 	bcc .apply_title_delay
-	lda #$00
+	lda #0
 	sta _VIC_VOLUME_AUX_COLOUR
 .apply_title_delay
 	jmp apply_skill_level_delay
 
 .wait_before_next_note
-	ldx #$c8
+	ldx #200
 .delay_outer_loop
 	lda SKILL_LEVEL
-	eor #$03
+	eor #%00000011 ;$03
 	asl
 	asl
 	asl
@@ -1745,7 +1745,7 @@ update_title_theme
 	dey
 	bpl .delay_inner_loop
 	txa
-	and #$0f
+	and #%00001111 ;$0f
 	bne .next_delay_iteration
 	lda _VIC_VOLUME_AUX_COLOUR
 	beq .next_delay_iteration
@@ -1758,9 +1758,9 @@ update_title_theme
 ;--------------------------------------------------------------------------------------------------
 ; High bytes and low-byte offsets for the four Robo Droid animation frames.
 robo_droid_frame_high_bytes
-	!byte $b7,$b7,$b7,$b7
+	!byte >ROBO_DROID_FRAME_1,>ROBO_DROID_FRAME_2,>ROBO_DROID_FRAME_3,>ROBO_DROID_FRAME_4
 robo_droid_frame_low_bytes
-	!byte $39,$41,$49,$51
+	!byte <ROBO_DROID_FRAME_1,<ROBO_DROID_FRAME_2,<ROBO_DROID_FRAME_3,<ROBO_DROID_FRAME_4
 ;--------------------------------------------------------------------------------------------------
 ; Select and draw one of the Robo Droid's four animation frames.
 draw_robo_droid
@@ -1771,15 +1771,15 @@ draw_robo_droid
 	sta DRAW_Y
 select_robo_droid_frame
 	lda FRAME_COUNTER
-	eor #$ff
+	eor #%11111111 ;$ff
 	lsr
-	and #$03
+	and #%00000011 ;$03
 	tay
 	lda robo_droid_frame_high_bytes,y
 	sta GRAPHIC_PTR+1
 	lda robo_droid_frame_low_bytes,y
 	sta GRAPHIC_PTR
-	lda #$07
+	lda #7  ;8-row graphic: final row index
 	jmp xor_draw_shifted_bitmap
 
 .delay_for_empty_robo_droid_slot
@@ -1789,7 +1789,7 @@ select_robo_droid_frame
 ;--------------------------------------------------------------------------------------------------
 ; Update all seven Robo Droid slots.
 update_robo_droids
-	ldx #$06                ;up to seven independently moving enemies
+	ldx #6                ;up to seven independently moving enemies
 .update_next_robo_droid
 	lda ROBO_DROID_X,x
 	beq .delay_for_empty_robo_droid_slot
@@ -1823,15 +1823,15 @@ update_one_robo_droid
 	clc
 	adc direction_delta_y,y
 	jsr .clamp_robo_droid_coordinate
-	cmp #$98
+	cmp #152
 	bcc .store_robo_droid_y
-	lda #$98
+	lda #152
 .store_robo_droid_y
 	sta COLLISION_Y
 	jsr update_random_number
-	and #$07
+	and #%00000111 ;$07
 	bne .normalize_robo_droid_direction
-	and #$01
+	and #%00000001 ;$01
 	beq .turn_robo_droid_clockwise  ;always branch
 .unreachable_counter_clockwise_turn
 	dec ROBO_DROID_DIRECTION,x
@@ -1841,7 +1841,7 @@ update_one_robo_droid
 	inc ROBO_DROID_DIRECTION,x
 .normalize_robo_droid_direction
 	lda ROBO_DROID_DIRECTION,x
-	and #$07
+	and #%00000111 ;$07
 	sta ROBO_DROID_DIRECTION,x
 	jsr test_2x2_background_collision
 	beq .resolve_robo_droid_actions
@@ -1860,23 +1860,24 @@ update_one_robo_droid
 	jmp draw_robo_droid
 
 .destroy_robo_droid
-	lda #$00
+	lda #0
 	sta ROBO_DROID_X,x
 	jmp award_50_points
 
+; Clamp either coordinate to the playable 8-162 pixel range.
 .clamp_robo_droid_coordinate
-	cmp #$a2
+	cmp #162
 	bcs .clamp_robo_droid_high
-	cmp #$08
+	cmp #8
 	bcc .clamp_robo_droid_low
 	rts
 
 .clamp_robo_droid_high
-	lda #$a2
+	lda #162
 	rts
 
 .clamp_robo_droid_low
-	lda #$08
+	lda #8
 	rts
 
 ;--------------------------------------------------------------------------------------------------
@@ -1885,33 +1886,33 @@ update_one_robo_droid
 ; A direct hit erases the SHIV and creates an explosion. Ordinary enemies then also test against
 ; active explosion frames, allowing one destroyed enemy to trigger a chain reaction.
 test_ion_shiv_or_explosion_hit
-	lda #$00
+	lda #0
 test_ion_shiv_hit
 	sta HIT_TEST_MODE
 	txa
 	pha
-	ldx #$02
+	ldx #2
 .test_next_ion_shiv_for_entity
 	lda PLAYER_SHOT_X,x
 	beq .next_ion_shiv_for_entity
 	sec
 	sbc COLLISION_X
-	adc #$06
-	cmp #$0c
+	adc #6
+	cmp #12
 	bcs .next_ion_shiv_for_entity
 	lda PLAYER_SHOT_Y,x
 	sec
 	sbc COLLISION_Y
-	adc #$06
-	cmp #$0c
+	adc #6
+	cmp #12
 	bcs .next_ion_shiv_for_entity
 	jsr draw_player_shot
-	lda #$00
+	lda #0
 	sta PLAYER_SHOT_X,x
 	jsr create_explosion
 	pla
 	tax
-	lda #$00
+	lda #0
 	rts
 
 .next_ion_shiv_for_entity
@@ -1928,7 +1929,7 @@ test_ion_shiv_hit
 create_explosion
 ; Allocate one of seven explosion slots at COLLISION_X/Y. If all slots are occupied the visual
 ; effect is dropped, but the caller still removes the entity and awards its score.
-	ldx #$06
+	ldx #6
 .find_free_explosion_slot
 	lda EXPLOSION_FRAME,x
 	beq .initialize_explosion
@@ -1942,14 +1943,14 @@ create_explosion
 	sta EXPLOSION_X,x
 	lda COLLISION_Y
 	sta EXPLOSION_Y,x
-	lda #$01
+	lda #1
 	sta EXPLOSION_FRAME,x
 	jmp draw_explosion
 
 ;--------------------------------------------------------------------------------------------------
 ; Advance each active four-frame explosion every fourth main-loop iteration.
 update_explosions
-	ldx #$06
+	ldx #6
 .update_next_explosion
 	jsr .update_one_explosion
 	dex
@@ -1960,25 +1961,25 @@ update_explosions
 .update_one_explosion
 	lda EXPLOSION_FRAME,x
 	beq .explosion_update_done
-	cmp #$01
+	cmp #1
 	bne .test_animation_delay
 	lda EXPLOSION_SOUND_TIMER
 	bne .test_animation_delay
-	lda #$03
+	lda #3
 	sta EXPLOSION_SOUND_TIMER
 .test_animation_delay
 	lda FRAME_COUNTER
-	and #$03
+	and #%00000011 ;$03
 	bne .explosion_update_done
 	jsr draw_explosion
 	inc EXPLOSION_FRAME,x
 	lda EXPLOSION_FRAME,x
-	cmp #$05
+	cmp #5
 	beq .retire_explosion
 	jmp draw_explosion
 
 .retire_explosion
-	lda #$00
+	lda #0
 	sta EXPLOSION_FRAME,x
 explosion_frame_high_bytes_minus_1
 	rts
@@ -2004,7 +2005,7 @@ draw_explosion
 	sta GRAPHIC_PTR+1
 	lda explosion_frame_low_bytes_minus_1,y
 	sta GRAPHIC_PTR
-	lda #$07
+	lda #7  ;8-row graphic: final row index
 	jmp xor_draw_shifted_bitmap
 
 ;--------------------------------------------------------------------------------------------------
@@ -2020,7 +2021,7 @@ select_snap_jumper_graphic
 	sta GRAPHIC_PTR+1
 	lda #<SNAP_JUMPER_GRAPHIC
 	sta GRAPHIC_PTR
-	lda #$07
+	lda #7  ;8-row graphic: final row index
 	jmp xor_draw_shifted_bitmap
 
 .delay_for_empty_snap_jumper_slot
@@ -2030,7 +2031,7 @@ select_snap_jumper_graphic
 ;--------------------------------------------------------------------------------------------------
 ; Update all seven Snap Jumper slots.
 update_snap_jumpers
-	ldx #$06                ;up to seven direct player-seeking enemies
+	ldx #6                ;up to seven direct player-seeking enemies
 .update_next_snap_jumper
 	lda SNAP_JUMPER_X,x
 	beq .delay_for_empty_snap_jumper_slot
@@ -2051,11 +2052,11 @@ update_one_snap_jumper
 	sta COLLISION_X
 	lda SNAP_JUMPER_Y,x
 	sta COLLISION_Y
-	lda #$01
+	lda #1
 	sta ENEMY_STEP_COUNT
 	inc FRAME_COUNTER
 	jsr update_random_number
-	and #$07
+	and #%00000111 ;$07
 	beq .start_snap_jumper_leap
 .perform_snap_jumper_step
 	ldy ROOM_SPEED_INDEX
@@ -2098,7 +2099,7 @@ update_one_snap_jumper
 	jmp draw_snap_jumper
 
 .destroy_snap_jumper
-	lda #$00
+	lda #0
 	sta SNAP_JUMPER_X,x
 	jmp award_50_points
 
@@ -2106,7 +2107,7 @@ update_one_snap_jumper
 	rts
 
 .start_snap_jumper_leap
-	lda #$08
+	lda #8
 	sta ENEMY_STEP_COUNT
 	jmp .perform_snap_jumper_step
 
@@ -2118,9 +2119,9 @@ update_shadow
 	lda SHADOW_X
 	bne .update_active_shadow
 	lda SHADOW_APPEARANCE_TIMER
-	cmp #$03
+	cmp #3
 	bcc .snap_or_shadow_update_done
-	lda #$05
+	lda #5
 	sta SHADOW_X
 	sta SHADOW_Y
 ;--------------------------------------------------------------------------------------------------
@@ -2139,17 +2140,17 @@ select_and_draw_shadow_frame
 	lda DRAW_X
 	clc
 	adc DRAW_Y
-	and #$07
-	cmp #$04
+	and #%00000111 ;$07
+	cmp #4
 	bcc .use_second_shadow_frame
 .draw_selected_shadow_frame
-	lda #$0b
+	lda #11  ;12-row graphic: final row index
 	jmp xor_draw_shifted_bitmap
 
 .use_second_shadow_frame
-	lda #$b7
+	lda #>SHADOW_FRAME_2
 	sta GRAPHIC_PTR+1
-	lda #$65
+	lda #<SHADOW_FRAME_2
 	sta GRAPHIC_PTR
 	jmp .draw_selected_shadow_frame
 
@@ -2182,9 +2183,9 @@ select_and_draw_shadow_frame
 	lda SHADOW_X
 	sta COLLISION_X
 	lda SHADOW_Y
-	adc #$02
+	adc #2
 	sta COLLISION_Y
-	lda #$01
+	lda #1
 	jsr test_ion_shiv_hit
 	php
 	lda SHADOW_HIT_TIMER
@@ -2194,7 +2195,7 @@ select_and_draw_shadow_frame
 	jmp draw_shadow
 
 .begin_shadow_stun
-	lda #$2d
+	lda #45
 	sta SHADOW_HIT_TIMER
 	jmp draw_shadow
 
@@ -2204,7 +2205,7 @@ select_and_draw_shadow_frame
 	jmp draw_shadow
 
 .delay_for_empty_enemy_slot
-	ldy #$be
+	ldy #190
 .delay_loop
 	dey
 	bne .delay_loop
@@ -2217,18 +2218,18 @@ select_and_draw_shadow_frame
 ; shared by the Spiral Drones and Robo Droids; Snap Jumpers only pursue by contact.
 try_enemy_fire
 	lda FRAME_COUNTER
-	and #$07
+	and #%00000111 ;$07
 	bne .enemy_fire_done
 	lda COLLISION_X
 	sbc PLAYER_X
-	cmp #$04
+	cmp #4
 	bcc .choose_vertical_shot
 	lda COLLISION_Y
 	sbc PLAYER_Y
-	cmp #$04
+	cmp #4
 	bcc .choose_horizontal_shot
 	jsr update_random_number
-	and #$07
+	and #%00000111 ;$07
 	bne .enemy_fire_done
 	jsr choose_direction_toward_player
 	jmp .allocate_enemy_shot
@@ -2243,26 +2244,26 @@ try_enemy_fire
 	lda COLLISION_X
 	cmp PLAYER_X
 	bcc .shoot_right
-	lda #$06
+	lda #6                          ;left
 	jmp .allocate_enemy_shot
 
 .shoot_right
-	lda #$02
+	lda #2                          ;right
 	jmp .allocate_enemy_shot
 
 .shoot_up
-	lda #$00
+	lda #0                          ;up
 	jmp .allocate_enemy_shot
 
 .shoot_down
-	lda #$04
+	lda #4                          ;down
 	jmp .allocate_enemy_shot
 
 .allocate_enemy_shot
 	sta GRAPHIC_PTR+1             ;temporary direction while searching for a free slot
 	txa
 	pha
-	ldx #$06
+	ldx #6
 .find_free_enemy_shot_slot
 	lda ENEMY_SHOT_X,x
 	beq .initialize_enemy_shot
@@ -2276,10 +2277,10 @@ try_enemy_fire
 	lda GRAPHIC_PTR+1
 	sta ENEMY_SHOT_DIRECTION,x
 	lda COLLISION_X
-	adc #$03
+	adc #3
 	sta ENEMY_SHOT_X,x
 	lda COLLISION_Y
-	adc #$03
+	adc #3
 	sta ENEMY_SHOT_Y,x
 	jsr draw_enemy_shot
 	pla
@@ -2290,13 +2291,13 @@ try_enemy_fire
 ; Draw the short vertical enemy-shot bitmap for directions 0/4 or the longer horizontal/diagonal
 ; bitmap for all other directions.
 draw_enemy_shot
-	lda #>(ENEMY_SHOT_GRAPHIC_1+3)
+	lda #>ENEMY_SHOT_VERTICAL_GRAPHIC
 	sta GRAPHIC_PTR+1
-	lda #<(ENEMY_SHOT_GRAPHIC_1+3)
+	lda #<ENEMY_SHOT_VERTICAL_GRAPHIC
 	sta GRAPHIC_PTR
 	lda ENEMY_SHOT_DIRECTION,x
 	beq .draw_selected_enemy_shot
-	cmp #$04
+	cmp #4
 	beq .draw_selected_enemy_shot
 	lda #>ENEMY_SHOT_GRAPHIC_1
 	sta GRAPHIC_PTR+1
@@ -2307,13 +2308,13 @@ draw_enemy_shot
 	sta DRAW_X
 	lda ENEMY_SHOT_Y,x
 	sta DRAW_Y
-	lda #$02
+	lda #2  ;3-row graphic: final row index
 	jmp xor_draw_shifted_bitmap
 
 ;--------------------------------------------------------------------------------------------------
 ; Move all seven enemy shots one pixel and remove shots outside the screen or over a solid cell.
 update_enemy_shots
-	ldx #$06
+	ldx #6
 .update_next_enemy_shot
 	lda ENEMY_SHOT_X,x
 	beq .advance_enemy_shot_slot
@@ -2335,27 +2336,27 @@ update_enemy_shots
 	clc
 	adc direction_delta_y,y
 	sta ENEMY_SHOT_Y,x
-	cmp #$05
+	cmp #5
 	bcc .remove_enemy_shot
-	cmp #$aa
+	cmp #170
 	bcs .remove_enemy_shot
 	lda ENEMY_SHOT_X,x
-	cmp #$05
+	cmp #5
 	bcc .remove_enemy_shot
-	cmp #$aa
+	cmp #170
 	bcs .remove_enemy_shot
 	lda ENEMY_SHOT_X,x
-	adc #$01
+	adc #1
 	sta COLLISION_X             ;calculated but the background test uses pre-move DRAW_X/Y
 	lda ENEMY_SHOT_Y,x
-	adc #$01
+	adc #1
 	sta COLLISION_Y
 	jsr test_background_at_position
 	beq .remove_enemy_shot
 	jmp draw_enemy_shot
 
 .remove_enemy_shot
-	lda #$00
+	lda #0
 	sta ENEMY_SHOT_X,x
 	rts
 
@@ -2366,7 +2367,7 @@ draw_keyhole
 	sta GRAPHIC_PTR+1
 	lda #<KEYHOLE_GRAPHIC
 	sta GRAPHIC_PTR
-	lda #$0f
+	lda #15  ;16-row graphic: final row index
 	jmp xor_draw_shifted_bitmap
 
 ;--------------------------------------------------------------------------------------------------
@@ -2376,7 +2377,7 @@ draw_key
 	sta GRAPHIC_PTR+1
 	lda #<KEY_GRAPHIC
 	sta GRAPHIC_PTR
-	lda #$0b
+	lda #11  ;12-row graphic: final row index
 	jmp xor_draw_shifted_bitmap
 
 ;--------------------------------------------------------------------------------------------------
@@ -2388,14 +2389,14 @@ draw_extra_life_bottle
 	sta GRAPHIC_PTR
 	lda FRAME_COUNTER
 	lsr
-	and #$01
+	and #%00000001 ;$01
 	beq .draw_selected_extra_life_bottle
 	lda #>EXTRA_LIFE_BOTTLE_2
 	sta GRAPHIC_PTR+1
 	lda #<EXTRA_LIFE_BOTTLE_2
 	sta GRAPHIC_PTR
 .draw_selected_extra_life_bottle
-	lda #$0a
+	lda #10  ;11-row graphic: final row index
 	jmp xor_draw_shifted_bitmap
 
 ;--------------------------------------------------------------------------------------------------
@@ -2407,14 +2408,14 @@ draw_mystery_question
 	sta GRAPHIC_PTR
 	lda FRAME_COUNTER
 	lsr
-	and #$01
+	and #%00000001 ;$01
 	beq .draw_selected_mystery_question
 	lda #>QUESTION_GRAPHIC_2
 	sta GRAPHIC_PTR+1
 	lda #<QUESTION_GRAPHIC_2
 	sta GRAPHIC_PTR
 .draw_selected_mystery_question
-	lda #$09
+	lda #9  ;10-row graphic: final row index
 	jmp xor_draw_shifted_bitmap
 
 ;--------------------------------------------------------------------------------------------------
@@ -2423,29 +2424,29 @@ draw_mystery_question
 test_explosion_hit
 	txa
 	pha
-	ldx #$06
+	ldx #6
 .test_next_explosion
 	lda EXPLOSION_FRAME,x
 	beq .next_explosion
 	lda EXPLOSION_X,x
 	sec
 	sbc COLLISION_X
-	adc #$04
-	cmp #$08
+	adc #4
+	cmp #8
 	bcs .next_explosion
 	lda EXPLOSION_Y,x
 	sec
 	sbc COLLISION_Y
-	adc #$04
-	cmp #$08
+	adc #4
+	cmp #8
 	bcs .next_explosion
 	jsr draw_explosion
-	lda #$00
+	lda #0
 	sta EXPLOSION_FRAME,x
 	jsr create_explosion
 	pla
 	tax
-	lda #$00
+	lda #0
 	rts
 
 .next_explosion
@@ -2453,7 +2454,7 @@ test_explosion_hit
 	bpl .test_next_explosion
 	pla
 	tax
-	lda #$01
+	lda #1
 	rts
 
 ;--------------------------------------------------------------------------------------------------
@@ -2463,18 +2464,18 @@ draw_lair_target
 	sta DRAW_X
 	lda LAIR_TARGET_Y
 	sta DRAW_Y
-	lda #$b8
+	lda #>LAIR_TARGET_LEFT_GRAPHIC
 	sta GRAPHIC_PTR+1
-	lda #$65
+	lda #<LAIR_TARGET_LEFT_GRAPHIC
 	sta GRAPHIC_PTR
-	lda #$17
+	lda #23  ;24-row graphic: final row index
 	jsr xor_draw_shifted_bitmap
 	jsr advance_draw_x_by_8
-	lda #$b8
+	lda #>LAIR_TARGET_RIGHT_GRAPHIC
 	sta GRAPHIC_PTR+1
-	lda #$7d
+	lda #<LAIR_TARGET_RIGHT_GRAPHIC
 	sta GRAPHIC_PTR
-	lda #$17
+	lda #23  ;24-row graphic: final row index
 	jmp xor_draw_shifted_bitmap
 
 ;--------------------------------------------------------------------------------------------------
@@ -2484,7 +2485,7 @@ draw_lair_target
 update_lair_target
 	jsr draw_lair_target
 	lda LAIR_TARGET_X
-	adc #$08
+	adc #8
 	cmp PLAYER_X
 	bcc .move_lair_target_right
 	dec LAIR_TARGET_X
@@ -2503,15 +2504,15 @@ update_lair_target
 	inc LAIR_TARGET_Y
 .test_lair_target_hit
 	lda LAIR_TARGET_X
-	adc #$04
+	adc #4
 	sta COLLISION_X
 	lda LAIR_TARGET_Y
-	adc #$02
+	adc #2
 	sta COLLISION_Y
 	lda LAIR_HIT_COUNT
-	cmp #$14
+	cmp #20
 	beq .complete_lair
-	lda #$01
+	lda #1
 	jsr test_ion_shiv_hit
 	beq .record_lair_hit
 	jmp draw_lair_target
@@ -2521,9 +2522,9 @@ update_lair_target
 	jmp draw_lair_target
 
 .complete_lair
-	lda #$00
+	lda #LEVEL_ONE
 	sta LEVEL_NUMBER
-	lda #$03
+	lda #SKILL_EXPERT
 	sta SKILL_LEVEL
 	jmp reset_level_state
 
@@ -2536,22 +2537,22 @@ choose_direction_toward_player
 	lda PLAYER_Y
 	cmp COLLISION_Y
 	bcc .player_is_above_and_right
-	lda #$03
+	lda #3
 	rts
 
 .player_is_left
 	lda PLAYER_Y
 	cmp COLLISION_Y
 	bcc .player_is_above_and_left
-	lda #$05
+	lda #5
 	rts
 
 .player_is_above_and_left
-	lda #$07
+	lda #7
 	rts
 
 .player_is_above_and_right
-	lda #$01
+	lda #1
 	rts
 
 ;--------------------------------------------------------------------------------------------------
@@ -2564,27 +2565,27 @@ choose_direction_toward_player
 ; If Shamus left the previous room before ROOM_EXIT_RUSH_TIMER expired, all seven slots are forced
 ; active for every species - a strong penalty for rushing straight through a room.
 initialize_room_enemies
-	lda #$00
-	ldx #$06
+	lda #0
+	ldx #6
 .clear_spiral_drone_slots
 	sta SPIRAL_DRONE_X,x
 	dex
 	bpl .clear_spiral_drone_slots
-	ldx #$06
+	ldx #6
 .clear_snap_jumper_slots
 	sta SNAP_JUMPER_X,x
 	dex
 	bpl .clear_snap_jumper_slots
-	ldx #$06
+	ldx #6
 .clear_robo_droid_slots
 	sta ROBO_DROID_X,x
 	dex
 	bpl .clear_robo_droid_slots
 	lda LEVEL_NUMBER
-	cmp #$02
+	cmp #LEVEL_LAIR
 	beq .enemy_initialization_done
 	lda ROOM_NUMBER
-	cmp #$1b
+	cmp #27
 	beq .initialize_room_27_enemies
 	jsr choose_enemy_population_count
 .spawn_next_spiral_drone
@@ -2603,7 +2604,7 @@ initialize_room_enemies
 	lda COLLISION_Y
 	sta ROBO_DROID_Y,x
 	jsr update_random_number
-	and #$07
+	and #%00000111 ;$07
 	sta ROBO_DROID_DIRECTION,x
 	dex
 	bpl .spawn_next_robo_droid
@@ -2627,18 +2628,18 @@ initialize_room_enemies
 	pha
 .choose_permitted_spawn_cell
 	jsr update_random_number
-	and #$07
+	and #%00000111 ;$07
 	tay
 	ldx ROOM_NUMBER
 	lda room_spawn_position_masks,x
 	and bit_selection_masks,y
 	beq .choose_permitted_spawn_cell
 	jsr update_random_number
-	and #$0f
+	and #%00001111 ;$0f
 	adc .enemy_spawn_y_bases,y
 	sta COLLISION_Y
 	jsr update_random_number
-	and #$0f
+	and #%00001111 ;$0f
 	adc .enemy_spawn_x_bases,y
 	sta COLLISION_X
 	pla
@@ -2655,23 +2656,23 @@ initialize_room_enemies
 ;--------------------------------------------------------------------------------------------------
 ; Clear player shots, explosions and enemy shots, then draw every populated ordinary-enemy slot.
 clear_transient_entities
-	ldx #$02
-	lda #$00
+	ldx #2
+	lda #0
 .clear_player_shots
 	sta PLAYER_SHOT_X,x
 	dex
 	bpl .clear_player_shots
-	ldx #$06
+	ldx #6
 .clear_explosions
 	sta EXPLOSION_FRAME,x
 	dex
 	bpl .clear_explosions
-	ldx #$06
+	ldx #6
 .clear_enemy_shots
 	sta ENEMY_SHOT_X,x
 	dex
 	bpl .clear_enemy_shots
-	ldx #$06
+	ldx #6
 .draw_next_robo_droid
 	lda ROBO_DROID_X,x
 	beq .skip_robo_droid
@@ -2679,7 +2680,7 @@ clear_transient_entities
 .skip_robo_droid
 	dex
 	bpl .draw_next_robo_droid
-	ldx #$06
+	ldx #6
 .draw_next_spiral_drone
 	lda SPIRAL_DRONE_X,x
 	beq .skip_spiral_drone
@@ -2687,7 +2688,7 @@ clear_transient_entities
 .skip_spiral_drone
 	dex
 	bpl .draw_next_spiral_drone
-	ldx #$06
+	ldx #6
 .draw_next_snap_jumper
 	lda SNAP_JUMPER_X,x
 	beq .skip_snap_jumper
@@ -2698,43 +2699,43 @@ clear_transient_entities
 	rts
 
 ;--------------------------------------------------------------------------------------------------
-; Once room $1B's barrier has been removed, place all enemy slots on its central X coordinate with
+; Once room 27's barrier has been removed, place all enemy slots on its central X coordinate with
 ; randomized Y positions. Before removal the room deliberately contains no ordinary enemies.
 initialize_open_room_27_enemies
 	lda ROOM_27_BARRIER_PHASE
-	cmp #$ff
+	cmp #255
 	beq .populate_open_room_27
 	rts
 
 .populate_open_room_27
-	ldx #$06
+	ldx #6
 .spawn_room_27_spiral_drone
-	lda #$58
+	lda #88                         ;central X coordinate
 	sta SPIRAL_DRONE_X,x
 	jsr .choose_room_27_enemy_y
 	sta SPIRAL_DRONE_Y,x
 	dex
 	bpl .spawn_room_27_spiral_drone
-	ldx #$06
+	ldx #6
 .spawn_room_27_robo_droid
-	lda #$58
+	lda #88                         ;central X coordinate
 	sta ROBO_DROID_X,x
 	jsr .choose_room_27_enemy_y
 	sta ROBO_DROID_Y,x
 	dex
 	bpl .spawn_room_27_robo_droid
-	ldx #$06
+	ldx #6
 .spawn_room_27_snap_jumper
-	lda #$58
+	lda #88                         ;central X coordinate
 	sta SNAP_JUMPER_X,x
 	jsr .choose_room_27_enemy_y
 	sta SNAP_JUMPER_Y,x
 	dex
 	bpl .spawn_room_27_snap_jumper
-	ldx #$06
+	ldx #6
 .choose_room_27_robo_droid_direction
 	jsr update_random_number
-	and #$07
+	and #%00000111 ;$07
 	sta ROBO_DROID_DIRECTION,x
 	dex
 	bpl .choose_room_27_robo_droid_direction
@@ -2742,19 +2743,21 @@ initialize_open_room_27_enemies
 
 .choose_room_27_enemy_y
 	jsr update_random_number
-	and #$3f
-	adc #$20
+	and #%00111111 ;$3f
+	adc #32
 	rts
 
 ;--------------------------------------------------------------------------------------------------
 ; Draw a three-byte packed-BCD value through SCORE_PTR, suppressing leading zeroes and appending
 ; the fixed units zero used by the displayed score. A zero score is rendered as one zero.
 draw_packed_bcd_score
-	ldy #$00
+.packed_digit_byte = $83
+.saved_score_y = $84
+	ldy #0
 .find_first_nonzero_score_byte
 	lda (SCORE_PTR),y
 	beq .skip_leading_zero_byte
-	cmp #$10
+	cmp #16
 	bcs .draw_remaining_score_bytes
 	jsr .draw_low_digit
 	jmp .advance_score_byte
@@ -2764,15 +2767,15 @@ draw_packed_bcd_score
 	jsr .draw_two_digits
 .advance_score_byte
 	iny
-	cpy #$03
+	cpy #3
 	bne .draw_remaining_score_bytes
 .draw_fixed_units_zero
-	lda #$00
+	lda #0
 	jmp .draw_low_digit
 
 .skip_leading_zero_byte
 	iny
-	cpy #$03
+	cpy #3
 	bne .find_first_nonzero_score_byte
 	jmp .draw_fixed_units_zero
 
@@ -2780,49 +2783,49 @@ draw_packed_bcd_score
 	pha
 	lda DRAW_X
 	clc
-	adc #$08
+	adc #8
 	sta DRAW_X
 	pla
 	rts
 
 .draw_two_digits
-	sta SCORE_DIGIT_BYTE
+	sta .packed_digit_byte
 	lsr
 	lsr
 	lsr
 	lsr
 	jsr .draw_low_digit
-	lda SCORE_DIGIT_BYTE
+	lda .packed_digit_byte
 .draw_low_digit
-	and #$0f
+	and #%00001111 ;$0f
 	jsr .draw_score_digit
 	jmp .advance_score_draw_position
 
 .draw_score_digit
-	sty SCORE_SAVED_Y
+	sty .saved_score_y
 	clc
-	adc #$30
+	adc #48
 	jsr draw_character
-	ldy SCORE_SAVED_Y
+	ldy .saved_score_y
 	rts
 
 ;--------------------------------------------------------------------------------------------------
 ; Draw the current score and high score as BCD values followed by their fixed units zero.
 draw_score_and_high_score
-	lda #$a0
+	lda #160
 	sta DRAW_Y
-	lda #$70
+	lda #112
 	sta DRAW_X
-	lda #$00
+	lda #0
 	sta SCORE_PTR+1
 	lda #<SCORE_BCD
 	sta SCORE_PTR
 	jsr draw_packed_bcd_score
-	lda #$a8
+	lda #168
 	sta DRAW_Y
-	lda #$70
+	lda #112
 	sta DRAW_X
-	lda #$00
+	lda #0
 	sta SCORE_PTR+1
 	lda #<HIGH_SCORE_BCD
 	sta SCORE_PTR
@@ -2837,13 +2840,13 @@ award_50_points
 	lda SCORE_BCD+2
 	clc
 	sed
-	adc #$05
+	adc #5
 	sta SCORE_BCD+2
 	lda SCORE_BCD+1
-	adc #$00
+	adc #0
 	sta SCORE_BCD+1
 	lda SCORE_BCD
-	adc #$00
+	adc #0
 	sta SCORE_BCD
 	cld
 	lda SCORE_BCD
@@ -2858,7 +2861,7 @@ award_50_points
 	cmp HIGH_SCORE_BCD+2
 	bcc .score_update_done
 .copy_new_high_score
-	ldx #$02
+	ldx #2
 .copy_high_score_byte
 	lda SCORE_BCD,x
 	sta HIGH_SCORE_BCD,x
@@ -2874,12 +2877,12 @@ award_50_points
 force_maximum_population_if_room_rushed
 	lda ROOM_EXIT_RUSH_TIMER
 	beq .return_from_score_or_population_count
-	ldx #$06
+	ldx #6
 	rts
 
 choose_enemy_population_count
 	jsr update_random_number
-	and #$07
+	and #%00000111 ;$07
 	tax
 	jmp force_maximum_population_if_room_rushed
 
@@ -2890,10 +2893,10 @@ choose_enemy_population_count
 ; maze.
 apply_skill_level_delay
 	lda ROOM_NUMBER
-	ldx #$dc
+	ldx #220
 .repeat_skill_delay
 	lda SKILL_LEVEL
-	eor #$03
+	eor #%00000011 ;$03
 	asl
 	asl
 	asl
@@ -2914,59 +2917,59 @@ draw_player
 	lda PLAYER_Y
 	sta DRAW_Y
 	jsr .select_player_graphic
-	lda #$0a
+	lda #10  ;11-row graphic: final row index
 	jmp xor_draw_shifted_bitmap
 
 .select_player_graphic
 	lda JOYSTICK_STATE
-	and #$80
+	and #%10000000 ;$80
 	beq .select_right_facing_player
 	lda JOYSTICK_STATE
-	and #$10
+	and #%00010000 ;$10
 	beq .select_left_facing_player
 	lda JOYSTICK_STATE
-	and #$04
+	and #%00000100 ;$04
 	beq .select_vertical_player
 	lda JOYSTICK_STATE
-	and #$08
+	and #%00001000 ;$08
 	beq .select_vertical_player
-	lda #$b7
+	lda #>SHAMUS_FRAME_1
 	sta GRAPHIC_PTR+1
-	lda #$99
+	lda #<SHAMUS_FRAME_1
 	sta GRAPHIC_PTR
 .player_graphic_selected
 	rts
 
 .select_right_facing_player
-	lda #$b7
+	lda #>SHAMUS_RIGHT_FRAME_1
 	sta GRAPHIC_PTR+1
-	lda #$af
+	lda #<SHAMUS_RIGHT_FRAME_1
 	sta GRAPHIC_PTR
 	jmp .select_player_animation_frame
 
 .select_left_facing_player
-	lda #$b7
+	lda #>SHAMUS_LEFT_FRAME_1
 	sta GRAPHIC_PTR+1
-	lda #$c5
+	lda #<SHAMUS_LEFT_FRAME_1
 	sta GRAPHIC_PTR
 	jmp .select_player_animation_frame
 
 .select_vertical_player
-	lda #$b7
+	lda #>SHAMUS_FRAME_1
 	sta GRAPHIC_PTR+1
-	lda #$99
+	lda #<SHAMUS_FRAME_1
 	sta GRAPHIC_PTR
 .select_player_animation_frame
 	lda FRAME_COUNTER
 	lsr
-	and #$01
+	and #%00000001 ;$01
 	beq .player_graphic_selected
 	lda GRAPHIC_PTR
 	clc
-	adc #$0b
+	adc #11
 	sta GRAPHIC_PTR
 	lda GRAPHIC_PTR+1
-	adc #$00
+	adc #0
 	sta GRAPHIC_PTR+1
 	rts
 
@@ -2990,22 +2993,22 @@ update_player
 	jsr draw_player
 	inc FRAME_COUNTER
 	jsr read_joystick
-	and #$20
+	and #%00100000 ;$20
 	beq handle_fire_button
 	lda JOYSTICK_STATE
-	and #$04
+	and #%00000100 ;$04
 	beq .move_player_up
 .test_move_down
 	lda JOYSTICK_STATE
-	and #$08
+	and #%00001000 ;$08
 	beq .move_player_down
 .test_move_right
 	lda JOYSTICK_STATE
-	and #$80
+	and #%10000000 ;$80
 	beq .move_player_right
 .test_move_left
 	lda JOYSTICK_STATE
-	and #$10
+	and #%00010000 ;$10
 	beq .move_player_left
 .redraw_player_after_update
 	jsr draw_player
@@ -3033,12 +3036,12 @@ update_player
 
 .release_fire_latch_if_needed
 	lda JOYSTICK_STATE
-	and #$20
+	and #%00100000 ;$20
 	bne .release_fire_latch
 	rts
 
 .release_fire_latch
-	lda #$ff
+	lda #%11111111 ;$ff
 	sta INPUT_DIRECTION_LATCH
 .player_weapon_update_done
 	rts
@@ -3047,7 +3050,7 @@ update_player
 ; Search slots 2..0, store the current eight-way joystick direction and start the firing tone.
 ; If all three slots are active the request is silently ignored.
 try_fire_player_shot
-	ldx #$02
+	ldx #2
 .find_free_player_shot_slot
 	lda PLAYER_SHOT_X,x
 	beq .initialize_player_shot
@@ -3057,16 +3060,16 @@ try_fire_player_shot
 
 .initialize_player_shot
 	jsr decode_joystick_direction
-	cmp #$80
+	cmp #%10000000 ;$80
 	beq .player_weapon_update_done
 	sta PLAYER_SHOT_DIRECTION,x
 	lda PLAYER_Y
 	clc
-	adc #$03
+	adc #3
 	sta PLAYER_SHOT_Y,x
 	lda PLAYER_X
 	sta PLAYER_SHOT_X,x
-	lda #$05
+	lda #5
 	sta ION_SHIV_SOUND_TIMER
 ;--------------------------------------------------------------------------------------------------
 ; Select and draw the ION SHIV bitmap for one of the eight direction values.
@@ -3082,75 +3085,76 @@ draw_player_shot
 	sta GRAPHIC_PTR+1
 	lda player_shot_frame_low_bytes,y
 	sta GRAPHIC_PTR
-	lda #$07
+	lda #7  ;8-row graphic: final row index
 	jmp xor_draw_shifted_bitmap
 
 ;--------------------------------------------------------------------------------------------------
 ; Bitmap pointers for the eight directional ION SHIV graphics.
 player_shot_frame_high_bytes
-	!fill 5,$b7
-	!byte $b8,$b8,$b8
+	!byte >ION_SHIV_FRAME_1,>ION_SHIV_DIRECTION_1,>ION_SHIV_DIRECTION_2,>ION_SHIV_DIRECTION_3
+	!byte >ION_SHIV_DIRECTION_4,>ION_SHIV_DIRECTION_5,>ION_SHIV_DIRECTION_6,>ION_SHIV_DIRECTION_7
 player_shot_frame_low_bytes
-	!byte $db,$e3,$eb,$f3,$fb,$03,$0b,$13
+	!byte <ION_SHIV_FRAME_1,<ION_SHIV_DIRECTION_1,<ION_SHIV_DIRECTION_2,<ION_SHIV_DIRECTION_3
+	!byte <ION_SHIV_DIRECTION_4,<ION_SHIV_DIRECTION_5,<ION_SHIV_DIRECTION_6,<ION_SHIV_DIRECTION_7
 
 ;--------------------------------------------------------------------------------------------------
 ; Convert active-low joystick direction bits to values 0-7 clockwise; return $80 for neutral or an
 ; unsupported opposing-direction combination.
 decode_joystick_direction
 	lda JOYSTICK_STATE
-	eor #$ff
-	and #$9c
+	eor #%11111111 ;$ff
+	and #%10011100 ;$9c
 	beq .no_valid_direction
-	cmp #$04
+	cmp #%00000100 ;$04
 	beq .direction_up
-	cmp #$84
+	cmp #%10000100 ;$84
 	beq .direction_up_right
-	cmp #$80
+	cmp #%10000000 ;$80
 	beq .direction_right
-	cmp #$88
+	cmp #%10001000 ;$88
 	beq .direction_down_right
-	cmp #$08
+	cmp #%00001000 ;$08
 	beq .direction_down
-	cmp #$18
+	cmp #%00011000 ;$18
 	beq .direction_down_left
-	cmp #$10
+	cmp #%00010000 ;$10
 	beq .direction_left
-	cmp #$14
+	cmp #%00010100 ;$14
 	beq .direction_up_left
 .no_valid_direction
-	lda #$80
+	lda #%10000000 ;$80
 	rts
 
 .direction_up
-	lda #$00
+	lda #0
 	rts
 
 .direction_up_right
-	lda #$01
+	lda #1
 	rts
 
 .direction_right
-	lda #$02
+	lda #2
 	rts
 
 .direction_down_right
-	lda #$03
+	lda #3
 	rts
 
 .direction_down
-	lda #$04
+	lda #4
 	rts
 
 .direction_down_left
-	lda #$05
+	lda #5
 	rts
 
 .direction_left
-	lda #$06
+	lda #6
 	rts
 
 .direction_up_left
-	lda #$07
+	lda #7
 .direction_or_shot_update_done
 	rts
 
@@ -3166,7 +3170,7 @@ direction_delta_x
 ; Update all three ION SHIV slots. Each active shot moves four pixels along its eight-way direction
 ; and is removed if it reaches a screen limit or its leading point enters a solid maze character.
 update_player_shots
-	ldx #$02
+	ldx #2
 .update_next_player_shot
 	jsr .update_one_player_shot
 	dex
@@ -3190,7 +3194,7 @@ update_player_shots
 	adc direction_delta_x,y
 	jsr .remove_player_shot_if_outside_screen
 	sta PLAYER_SHOT_X,x
-	adc #$04
+	adc #4
 	sta DRAW_X
 	lda PLAYER_SHOT_Y,x
 	clc
@@ -3204,21 +3208,21 @@ update_player_shots
 	jsr .remove_player_shot_if_outside_screen
 	sta PLAYER_SHOT_Y,x
 	clc
-	adc #$03
+	adc #3
 	sta DRAW_Y
 	jsr test_background_at_position
 	beq .remove_player_shot
 	jmp draw_player_shot
 
 .remove_player_shot_if_outside_screen
-	cmp #$a6
+	cmp #166
 	bcs .remove_player_shot
-	cmp #$06
+	cmp #6
 	bcc .remove_player_shot
 	rts
 
 .remove_player_shot
-	lda #$00
+	lda #0
 	sta PLAYER_SHOT_X,x
 .entity_draw_or_shot_update_done
 	rts
@@ -3226,9 +3230,9 @@ update_player_shots
 ;--------------------------------------------------------------------------------------------------
 ; High bytes and low-byte offsets for the four Spiral Drone animation frames.
 spiral_drone_frame_high_bytes
-	!byte $b7,$b7,$b7,$b7
+	!byte >SPIRAL_DRONE_FRAME_1,>SPIRAL_DRONE_FRAME_2,>SPIRAL_DRONE_FRAME_3,>SPIRAL_DRONE_FRAME_4
 spiral_drone_frame_low_bytes
-	!byte $71,$79,$81,$89
+	!byte <SPIRAL_DRONE_FRAME_1,<SPIRAL_DRONE_FRAME_2,<SPIRAL_DRONE_FRAME_3,<SPIRAL_DRONE_FRAME_4
 
 ;--------------------------------------------------------------------------------------------------
 ; Select and draw one of the Spiral Drone's four animation frames.
@@ -3241,13 +3245,13 @@ draw_spiral_drone
 select_spiral_drone_frame
 	lda FRAME_COUNTER
 	lsr
-	and #$03
+	and #%00000011 ;$03
 	tay
 	lda spiral_drone_frame_high_bytes,y
 	sta GRAPHIC_PTR+1
 	lda spiral_drone_frame_low_bytes,y
 	sta GRAPHIC_PTR
-	lda #$07
+	lda #7  ;8-row graphic: final row index
 	jmp xor_draw_shifted_bitmap
 
 .delay_for_empty_spiral_drone_slot
@@ -3257,7 +3261,7 @@ select_spiral_drone_frame
 ;--------------------------------------------------------------------------------------------------
 ; Update all seven Spiral Drone slots and advance the Shadow appearance timer on counter rollover.
 update_spiral_drones
-	ldx #$06                ;up to seven wandering/player-seeking enemies
+	ldx #6                ;up to seven wandering/player-seeking enemies
 .update_next_spiral_drone
 	lda SPIRAL_DRONE_X,x
 	beq .delay_for_empty_spiral_drone_slot
@@ -3295,7 +3299,7 @@ update_one_spiral_drone
 	and enemy_update_masks,y
 	bne .test_spiral_drone_position
 	jsr update_random_number
-	and #$03
+	and #%00000011 ;$03
 	beq .choose_spiral_drone_y_step
 	lda COLLISION_X
 	cmp PLAYER_X
@@ -3307,7 +3311,7 @@ update_one_spiral_drone
 	inc COLLISION_X
 .choose_spiral_drone_y_step
 	jsr update_random_number
-	and #$03
+	and #%00000011 ;$03
 	beq .test_spiral_drone_position
 	lda COLLISION_Y
 	cmp PLAYER_Y
@@ -3336,7 +3340,7 @@ update_one_spiral_drone
 	jmp draw_spiral_drone
 
 .destroy_spiral_drone
-	lda #$00
+	lda #0
 	sta SPIRAL_DRONE_X,x
 	jmp award_50_points
 
@@ -3348,34 +3352,34 @@ test_background_at_position
 	lsr
 	lsr
 	lsr
-	sta $03
+	sta GRAPHIC_PTR+1
 	lda DRAW_Y
 	lsr
 	lsr
 	lsr
 	lsr
 	tay
-	lda #$00
+	lda #0
 .advance_to_screen_row
-	cpy #$00
+	cpy #0
 	beq .screen_row_selected
 	clc
-	adc #$16
+	adc #22
 	dey
 	jmp .advance_to_screen_row
 
 .screen_row_selected
 	clc
-	adc $03
+	adc GRAPHIC_PTR+1
 	tay
 	lda _SCREEN_MATRIX_ADDR,y
-	cmp #$fd
+	cmp #253
 	bcs .solid_background
-	lda #$01
+	lda #1
 	rts
 
 .solid_background
-	lda #$00
+	lda #0
 	rts
 
 ;--------------------------------------------------------------------------------------------------
@@ -3392,7 +3396,7 @@ test_2x2_background_collision
 	beq .collision_or_object_update_done
 	lda DRAW_X
 	sec
-	sbc #$08
+	sbc #8
 	sta DRAW_X
 	jsr advance_draw_y_by_8
 	jsr test_background_at_position
@@ -3430,19 +3434,19 @@ update_extra_life_object
 	jsr draw_lives_remaining
 	inc LIVES_REMAINING
 	jsr draw_lives_remaining
-	lda #$05
+	lda #5
 	sta REWARD_SOUND_TIMER
-	lda #$00
+	lda #0
 	sta EXTRA_LIFE_OBJECT_X
-	ldy #$01
+	ldy #1
 	lda ROOM_NUMBER
-	cmp #$01
+	cmp #1
 	beq .mark_room_01_extra_life_collected
-	cmp #$02
+	cmp #2
 	beq .mark_room_02_extra_life_collected
-	cmp #$0c
+	cmp #12
 	beq .mark_room_0c_extra_life_collected
-	cmp #$1a
+	cmp #26
 	beq .mark_room_1a_extra_life_collected
 .redraw_extra_life_object
 	jmp draw_extra_life_object
@@ -3490,17 +3494,17 @@ update_bonus_object
 	jsr test_player_object_overlap
 	bne .redraw_bonus_object
 	jsr .choose_mystery_reward
-	lda #$00
+	lda #0
 	sta MYSTERY_OBJECT_X
-	ldy #$01
+	ldy #1
 	lda ROOM_NUMBER
-	cmp #$00
+	cmp #0
 	beq .mark_room_00_mystery_collected
-	cmp #$08
+	cmp #8
 	beq .mark_room_08_mystery_collected
-	cmp #$0b
+	cmp #11
 	beq .mark_room_0b_mystery_collected
-	cmp #$18
+	cmp #24
 	beq .mark_room_18_mystery_collected
 .redraw_bonus_object
 	jmp draw_bonus_object
@@ -3522,23 +3526,23 @@ update_bonus_object
 	rts
 
 .choose_mystery_reward
-	lda #$05
+	lda #5
 	sta REWARD_SOUND_TIMER
 	jsr update_random_number
-	and #$07
+	and #%00000111 ;$07
 	beq .force_shadow_reward
-	cmp #$01
+	cmp #1
 	beq .extra_life_reward
-	cmp #$02
+	cmp #2
 	beq .slow_enemies_reward
-	cmp #$03
+	cmp #3
 	beq .fast_enemies_reward
-	cmp #$04
+	cmp #4
 	beq .score_reward
 	jmp .choose_mystery_reward
 
 .force_shadow_reward
-	lda #$05
+	lda #5
 	sta SHADOW_APPEARANCE_TIMER                     ;force Shadow appearance
 	rts
 
@@ -3548,17 +3552,17 @@ update_bonus_object
 	jmp draw_lives_remaining                   ;extra life
 
 .slow_enemies_reward
-	lda #$00
+	lda #0
 	sta ROOM_SPEED_INDEX                     ;slowest enemy update rate
 	rts
 
 .fast_enemies_reward
-	lda #$05
+	lda #5
 	sta ROOM_SPEED_INDEX                     ;fastest enemy update rate
 	rts
 
 .score_reward
-	ldx #$09
+	ldx #9
 .award_next_50_points
 	jsr award_50_points                    ;10 * 50 = 500 points
 	dex
@@ -3570,21 +3574,21 @@ update_bonus_object
 test_player_object_overlap
 	lda PLAYER_X
 	clc
-	adc #$08
+	adc #8
 	sbc DRAW_X
-	cmp #$10
+	cmp #16
 	bcs .no_player_object_overlap
 	lda PLAYER_Y
 	clc
-	adc #$08
+	adc #8
 	sbc DRAW_Y
-	cmp #$10
+	cmp #16
 	bcs .no_player_object_overlap
-	lda #$00
+	lda #0
 	rts
 
 .no_player_object_overlap
-	lda #$01
+	lda #1
 	rts
 
 ;--------------------------------------------------------------------------------------------------
@@ -3620,7 +3624,7 @@ configure_display
 	lda #25
 	sta _VIC_SCREEN_TOP_EDGE
 
-	lda #%00001111  ;volume max 15
+	lda #15  ;maximum volume; auxiliary colour remains zero
 	sta _VIC_VOLUME_AUX_COLOUR
 	lda #8  ;black background and border
 	sta _VIC_BG_BORDER_COL
@@ -3633,28 +3637,28 @@ clear_and_build_framebuffer
 	sta FRAMEBUFFER_PTR+1
 	lda #<_SCREEN_MATRIX_ADDR
 	sta FRAMEBUFFER_PTR
-	ldx #$0b
+	ldx #11
 .build_next_screen_column
-	ldy #$00
+	ldy #0
 .write_next_screen_code
 	sta (FRAMEBUFFER_PTR),y
 	clc
-	adc #$0b
+	adc #11
 	iny
-	cpy #$16
+	cpy #22
 	bne .write_next_screen_code
 	pha
 	lda FRAMEBUFFER_PTR
 	clc
-	adc #$16
+	adc #22
 	sta FRAMEBUFFER_PTR
 	pla
 	sec
-	sbc #$f1
+	sbc #241
 	dex
 	bne .build_next_screen_column
-	ldx #$00
-	lda #$01
+	ldx #0
+	lda #VIC_COLOUR_WHITE
 .initialize_colour_memory
 	sta _COLOUR_SCREEN_ADDR,x
 	sta _COLOUR_SCREEN_ADDR+$100,x
@@ -3665,7 +3669,7 @@ clear_and_build_framebuffer
 	lda #>_CHARACTER_BITMAP_ADDR
 	sta FRAMEBUFFER_PTR+1
 .clear_next_bitmap_page
-	lda #$00
+	lda #0
 	tay
 .clear_next_bitmap_byte
 	sta (FRAMEBUFFER_PTR),y
@@ -3678,20 +3682,21 @@ clear_and_build_framebuffer
 	rts
 
 ;--------------------------------------------------------------------------------------------------
-; XOR a variable-height, one-byte-wide source graphic at arbitrary pixel coordinates. Split shifted
-; bytes across adjacent framebuffer columns; drawing the same image twice erases it.
+; XOR a variable-height, one-byte-wide source graphic at arbitrary pixel coordinates. A supplies
+; the final zero-based source-row index; shifted bytes span adjacent framebuffer columns. Drawing
+; the same image twice erases it.
 xor_draw_shifted_bitmap
 	sta GRAPHIC_LAST_BYTE
 	txa
 	pha
 	jsr calculate_framebuffer_address
-	cmp #$04
+	cmp #4
 	bcs .draw_left_shifted_graphic
 	ldy GRAPHIC_LAST_BYTE
 .draw_next_right_shifted_row
 	lda (GRAPHIC_PTR),y
 	sta SHIFTED_BYTE_LOW
-	lda #$00
+	lda #0
 	ldx PIXEL_SHIFT
 	beq .store_right_shifted_row
 .shift_graphic_right
@@ -3707,7 +3712,7 @@ xor_draw_shifted_bitmap
 	tya
 	tax
 	clc
-	adc #$b0
+	adc #176
 	tay
 	lda (FRAMEBUFFER_PTR),y
 	eor SHIFTED_BYTE_HIGH
@@ -3726,11 +3731,11 @@ xor_draw_shifted_bitmap
 	lda (GRAPHIC_PTR),y
 	sta SHIFTED_BYTE_HIGH
 	lda PIXEL_SHIFT
-	eor #$07
+	eor #%00000111 ;$07
 	clc
-	adc #$01
+	adc #1
 	tax
-	lda #$00
+	lda #0
 .shift_graphic_left
 	asl SHIFTED_BYTE_HIGH
 	rol
@@ -3743,7 +3748,7 @@ xor_draw_shifted_bitmap
 	tya
 	tax
 	clc
-	adc #$b0
+	adc #176
 	tay
 	lda (FRAMEBUFFER_PTR),y
 	eor SHIFTED_BYTE_HIGH
@@ -3769,13 +3774,13 @@ framebuffer_column_low_bytes
 ; Combine the joystick lines from both VIAs into JOYSTICK_STATE. Bits are active-low:
 ; up=$04, down=$08, left=$10, fire=$20, right=$80.
 read_joystick
-	lda #$7f
+	lda #%01111111 ;$7f
 	sta _VIA_DATADIR_B
 	lda _VIA_KEYB_ROWS
-	and #$80
+	and #%10000000 ;$80
 	sta JOYSTICK_STATE
 	lda _VIA_JOYSTICK_MIRROR
-	and #$3c
+	and #%00111100 ;$3c
 	ora JOYSTICK_STATE
 	sta JOYSTICK_STATE
 	rts
@@ -3801,7 +3806,7 @@ update_random_number
 ; Convert a screen character code into its eight-byte uppercase/graphics ROM bitmap address.
 get_character_bitmap_address
 	sta GRAPHIC_PTR
-	lda #$00
+	lda #0
 	sta GRAPHIC_PTR+1
 	asl GRAPHIC_PTR
 	rol GRAPHIC_PTR+1
@@ -3819,7 +3824,7 @@ get_character_bitmap_address
 ; Draw one eight-row character-ROM glyph through the XOR bitmap renderer.
 draw_character
 	jsr get_character_bitmap_address
-	lda #$07
+	lda #7  ;8-row graphic: final row index
 	jmp xor_draw_shifted_bitmap
 
 ;--------------------------------------------------------------------------------------------------
@@ -3838,10 +3843,10 @@ calculate_framebuffer_address
 	adc DRAW_Y
 	sta FRAMEBUFFER_PTR
 	lda FRAMEBUFFER_PTR+1
-	adc #$00
+	adc #0
 	sta FRAMEBUFFER_PTR+1
 	lda DRAW_X
-	and #$07
+	and #%00000111 ;$07
 	sta PIXEL_SHIFT
 	rts
 
@@ -3852,8 +3857,8 @@ calculate_framebuffer_address
 	!source "bitmap-graphics.asm"
 
 ;--------------------------------------------------------------------------------------------------
-; There are 34 four-byte records: rooms $00-$1f, an otherwise unreachable $20 record, and the
-; lair at $21. draw_room_layout indexes this table with ROOM_NUMBER*4. Each bit selects one fixed
+; There are 34 four-byte records: rooms 0-31, an otherwise unreachable room 32 record, and the
+; lair at 33. draw_room_layout indexes this table with ROOM_NUMBER*4. Each bit selects one fixed
 ; wall segment from the four named placement tables above. Thus the entire
 ; room maze occupies only 136 bytes.
 room_layout_bytes
@@ -3907,8 +3912,8 @@ room_spawn_position_masks
 	!byte $bc,$08,$6b,$eb,$e0,$8d,$9b,$eb
 
 ;--------------------------------------------------------------------------------------------------
-; The compact VIC-20 progression is LEVEL ONE -> LEVEL TWO -> LAIR. Defeating the lair target
-; restarts at level one with SKILL_LEVEL forced to EXPERT, so subsequent cycles run at top speed.
+; Advance LEVEL_NUMBER from Level One to Level Two to the Lair without changing the title-screen
+; skill choice. Defeating the Lair is handled separately and forces Expert for the next cycle.
 advance_to_next_level
 	inc LEVEL_NUMBER
 	jsr award_level_completion_bonus
@@ -3927,50 +3932,50 @@ rebuild_current_room_after_object_change
 start_new_game
 	jsr silence_sound_generators
 	jsr show_title_and_calibration_screen
-	lda #$03
+	lda #3
 	sta LIVES_REMAINING
-	lda reset_level_state             ;discarded absolute load retained from the original
-	lda #$00
+	lda reset_level_state             ;reads opcode $a9; A is immediately overwritten by lda #0
+	lda #0
 	sta SCORE_BCD
 	sta SCORE_BCD+1
 	sta SCORE_BCD+2
-	sta LEVEL_NUMBER
+	sta LEVEL_NUMBER                  ;LEVEL_ONE
 	sta ROOM_EXIT_RUSH_TIMER
 ;--------------------------------------------------------------------------------------------------
 ; Reset keys, persistent room objects, room number, barrier state, and Shamus's starting position.
 reset_level_state
-	lda #$00
+	lda #0
 	sta KEY_FLAGS
 	sta ROOM_NUMBER
-	ldx #$03
+	ldx #3
 .clear_next_persistent_object_flag
 	sta EXTRA_LIFE_COLLECTED_FLAGS,x
 	sta MYSTERY_COLLECTED_FLAGS,x
 	dex
 	bpl .clear_next_persistent_object_flag
-	lda #$03
+	lda #3
 	sta ROOM_27_BARRIER_PHASE
-	lda #$0a
+	lda #10
 	sta PLAYER_X
-	lda #$42
+	lda #66
 	sta PLAYER_Y
 ;--------------------------------------------------------------------------------------------------
 ; Rebuild the current room: clear the framebuffer, draw its walls and persistent objects, choose
 ; enemy populations, reset transient state and timers, then enter the main loop.
 initialize_current_room
 	lda ROOM_NUMBER
-	cmp #$20
+	cmp #32
 	beq advance_to_next_level
 	jsr clear_and_build_framebuffer
 	jsr draw_room_layout
 	jsr initialize_room_enemies
 	jsr clear_transient_entities
-	lda initialize_room_runtime_state  ;discarded absolute load retained from the original
+	lda initialize_room_runtime_state  ;reads opcode $a2; the value is unused by the following setup
 ;--------------------------------------------------------------------------------------------------
-; Restore the animated wall seeds, draw Shamus/HUD, clear runtime timers, prepare the Lair when
-; applicable, and derive ordinary-enemy speed from the current room number.
+; Restore the animated wall seeds, draw Shamus and the status display, clear runtime timers, prepare
+; the Lair when applicable, and derive ordinary-enemy speed from the current room number.
 initialize_room_runtime_state
-	ldx #$0f
+	ldx #15
 .restore_next_electric_wall_byte
 	lda electric_horizontal_wall_seed_bitmap,x
 	sta ELECTRIC_HORIZONTAL_WALL_BITMAP,x
@@ -3984,7 +3989,7 @@ initialize_room_runtime_state
 	jsr draw_score_and_high_score
 	inc FRAME_COUNTER
 	jsr silence_sound_generators
-	lda #$00
+	lda #0
 	sta LAIR_HIT_COUNT
 	sta EXPLOSION_SOUND_TIMER
 	sta SHADOW_APPEARANCE_TIMER
@@ -3995,17 +4000,17 @@ initialize_room_runtime_state
 	sta ROOM_SPEED_INDEX
 	sta ION_SHIV_SOUND_TIMER
 	lda LEVEL_NUMBER
-	cmp #$02
+	cmp #LEVEL_LAIR
 	bne .initialize_room_timing
-	lda #$58
+	lda #88
 	sta LAIR_TARGET_X
 	sta LAIR_TARGET_Y
-	lda #$03
+	lda #3
 	sta SHADOW_APPEARANCE_TIMER
-	sta+2 SHADOW_APPEARANCE_TIMER    ;force the original three-byte absolute store
+	sta+2 SHADOW_APPEARANCE_TIMER    ;use the original three-byte absolute encoding
 	jsr draw_lair_target
 .initialize_room_timing
-	lda #$28
+	lda #40
 	sta ROOM_EXIT_RUSH_TIMER
 	lda ROOM_NUMBER
 	beq main_game_loop
@@ -4028,15 +4033,15 @@ main_game_loop
 	jsr update_snap_jumpers
 	jsr update_random_number
 	lda ROOM_NUMBER                    ;redundant zero-page load retained from the original
-	lda+2 ROOM_NUMBER                  ;force the original three-byte absolute load
-	cmp #$1b
+	lda+2 ROOM_NUMBER                  ;use the original three-byte absolute encoding
+	cmp #27
 	beq .preserve_room_27_barrier_state
-	lda #$03
+	lda #3
 	sta ROOM_27_BARRIER_PHASE
 .preserve_room_27_barrier_state
 	jsr handle_pause_key
 	lda LEVEL_NUMBER
-	cmp #$02
+	cmp #LEVEL_LAIR
 	beq .skip_shadow_update_in_lair
 	jsr update_shadow
 .skip_shadow_update_in_lair
@@ -4045,7 +4050,7 @@ main_game_loop
 	lda LEVEL_NUMBER
 	bne .perform_extra_enemy_shot_update
 	lda FRAME_COUNTER
-	and #$01
+	and #%00000001 ;$01
 	bne .skip_extra_enemy_shot_update
 .perform_extra_enemy_shot_update
 	jsr update_enemy_shots
@@ -4053,7 +4058,7 @@ main_game_loop
 	jsr update_extra_life_object
 	jsr update_bonus_object
 	lda LEVEL_NUMBER
-	cmp #$02
+	cmp #LEVEL_LAIR
 	bne .skip_lair_target_update
 	jsr update_lair_target
 .skip_lair_target_update
